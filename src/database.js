@@ -24,6 +24,17 @@ export class Database {
     this.ready = this.#open();
   }
 
+  #normalizeStoreDefinition(definition) {
+    if (typeof definition === "string" || Array.isArray(definition)) {
+      return { keyPath: definition };
+    }
+    if (definition === undefined) return {};
+    if (!definition || typeof definition !== "object") {
+      throw new TypeError("ストア定義は文字列またはオブジェクトで指定してください");
+    }
+    return definition;
+  }
+
   #open() {
     if (this.#opening) return this.#opening;
 
@@ -42,19 +53,39 @@ export class Database {
 
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
+        const upgradeTx = e.target.transaction;
 
         try {
-          for (const [name, keyPath] of Object.entries(this.#stores)) {
+          for (const [name, rawDefinition] of Object.entries(this.#stores)) {
+            const definition = this.#normalizeStoreDefinition(rawDefinition);
+            const { keyPath, autoIncrement, indexes = [] } = definition;
+
+            let store;
             if (!db.objectStoreNames.contains(name)) {
-              const options = keyPath === undefined
-                ? undefined
-                : { keyPath };
-              db.createObjectStore(name, options);
+              const options = {};
+              if (keyPath !== undefined) options.keyPath = keyPath;
+              if (autoIncrement !== undefined) options.autoIncrement = autoIncrement;
+              store = db.createObjectStore(name, options);
+            } else {
+              store = upgradeTx.objectStore(name);
+            }
+
+            if (!Array.isArray(indexes)) {
+              throw new TypeError(`ストア「${name}」のindexesは配列で指定してください`);
+            }
+
+            for (const index of indexes) {
+              if (!index || typeof index.name !== "string" || !index.name || index.keyPath === undefined) {
+                throw new TypeError(`ストア「${name}」のインデックス定義が不正です`);
+              }
+              if (!store.indexNames.contains(index.name)) {
+                store.createIndex(index.name, index.keyPath, index.options || {});
+              }
             }
           }
         } catch (err) {
           upgradeError = err;
-          e.target.transaction.abort();
+          upgradeTx.abort();
         }
       };
 
@@ -89,44 +120,72 @@ export class Database {
 
   async #ensure() {
     await this.ready;
-
-    if (!this.#db) {
-      await this.#open();
-    }
+    if (!this.#db) await this.#open();
   }
 
-  async execute(storeName, mode, operation) {
+  async transaction(storeNames, mode, callback) {
+    if (typeof callback !== "function") {
+      throw new TypeError("callbackは関数で指定してください");
+    }
+
     await this.#ensure();
 
     return new Promise((resolve, reject) => {
-      try {
-        const tx = this.#db.transaction(storeName, mode);
-        const req = operation(tx.objectStore(storeName));
-        let result;
+      let tx;
+      let settled = false;
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(normalizeError(error));
+      };
 
-        if (!req || typeof req !== "object" || !("onsuccess" in req)) {
-          throw new TypeError("operationはIDBRequestを返す必要があります");
+      try {
+        tx = this.#db.transaction(storeNames, mode);
+        const names = Array.isArray(storeNames) ? storeNames : [storeNames];
+        const stores = Object.fromEntries(
+          names.map((name) => [name, tx.objectStore(name)])
+        );
+        const result = callback(stores, tx);
+
+        if (result && typeof result.then === "function") {
+          throw new TypeError("transactionのcallback内ではawaitしないでください");
         }
 
-        req.onsuccess = () => {
-          result = req.result;
-        };
-
-        req.onerror = () => {
-          reject(normalizeError(req.error));
-        };
-
         tx.oncomplete = () => {
+          if (settled) return;
+          settled = true;
           resolve(result);
         };
-
-        tx.onabort = () => {
-          reject(normalizeError(tx.error));
+        tx.onabort = () => fail(tx.error);
+        tx.onerror = () => {
+          // エラーの詳細はabort時にまとめて返す
         };
       } catch (err) {
-        reject(normalizeError(err));
+        try { tx?.abort(); } catch {}
+        fail(err);
       }
     });
+  }
+
+  async execute(storeName, mode, operation) {
+    let requests;
+    const results = [];
+
+    await this.transaction(storeName, mode, (stores) => {
+      requests = operation(stores[storeName]);
+      const list = Array.isArray(requests) ? requests : [requests];
+
+      for (const [index, req] of list.entries()) {
+        if (!req || typeof req !== "object" || !("onsuccess" in req)) {
+          throw new TypeError("operationはIDBRequestまたはその配列を返す必要があります");
+        }
+        req.onsuccess = () => {
+          results[index] = req.result;
+        };
+      }
+    });
+
+    return Array.isArray(requests) ? results : results[0];
   }
 
   close() {
