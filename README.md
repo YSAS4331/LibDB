@@ -47,6 +47,32 @@ unsubscribe();
 
 通知は別タブ・同一オリジン間でBroadcastChannelを通じて送られます。BroadcastChannel非対応環境では通知機能は利用できません。また、IndexedDBを直接操作した場合や、別のIndexedDBラッパーによる変更は検知できません。
 
+### 変更差分（diff）
+
+変更通知には、デフォルトでレコード単位の変更前後データが含まれます。
+
+```js
+db.on("change", (event) => {
+  console.log(event.diff);
+  // [
+  //   {
+  //     key: 1,
+  //     before: { id: 1, name: "Taro", score: 100 },
+  //     after: { id: 1, name: "Taro", score: 120 }
+  //   }
+  // ]
+});
+```
+
+`diff` は追加・更新・削除・全件削除を対象にします。追加時の `before` は `null`、削除時の `after` は `null` です。差分の追跡が不要な場合は、接続前または接続後に静的プロパティで無効化できます。
+
+```js
+LibDB.diff = false; // 以降の変更通知ではdiffを作成しない
+LibDB.diff = true;  // 再び有効化
+```
+
+無効化しても変更通知自体（operation、store、timestampなど）は引き続き送信されます。diffは成功した書き込みトランザクションについてのみ通知されます。
+
 ## データベースの削除
 
 データベース自体を削除するには、静的メソッド `LibDB.delete(name)` を使用します。
