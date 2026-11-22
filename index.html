@@ -135,6 +135,25 @@
   </section>
 
   <section class="panel">
+    <h2>タブ間通知テスト</h2>
+    <p>同じデータベースを開いた別タブ間で、書き込み通知を送受信します。先に上の「選択したデータベース」でDBへ接続し、ストアを選んでください。</p>
+    <div class="actions" role="group" aria-label="通知モード">
+      <button id="notification-receiver" class="secondary" type="button" aria-pressed="false">受信モード</button>
+      <button id="notification-sender" class="secondary" type="button" aria-pressed="false">送信モード</button>
+    </div>
+    <p id="notification-mode-status" role="status" aria-live="polite">モードを選択してください。</p>
+    <div id="notification-receiver-controls" hidden>
+      <p>受信モードでは、このタブへの変更通知を表示します。DBのバージョン変更で接続が閉じられても、通知チャンネルは維持します。</p>
+      <button id="stop-notification-receiver" class="secondary" type="button">受信停止</button>
+    </div>
+    <div id="notification-sender-controls" hidden>
+      <textarea id="notification-payload" rows="3" placeholder='送信するJSONデータ（例: {"message":"hello"}）' style="box-sizing:border-box;width:100%;margin:10px 0;padding:10px;border:1px solid #465267;border-radius:8px;background:#0b0e12;color:inherit;font:13px/1.6 ui-monospace,monospace"></textarea>
+      <button id="send-notification" type="button">データを書き込んで通知</button>
+    </div>
+    <pre id="notification-log" style="min-height:100px;margin:12px 0 0;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;border-radius:8px;background:#0b0e12;color:#d4deed;font:13px/1.6 ui-monospace,monospace" aria-live="polite"></pre>
+  </section>
+
+  <section class="panel">
     <h2>ライブラリテスト</h2>
     <button id="run" type="button">テストを実行</button>
     <p id="status" role="status" aria-live="polite">読み込み中...</p>
@@ -439,6 +458,89 @@
         catch (error) { output("エラー: " + error.message); }
       });
     }
+
+    const receiverButton = document.querySelector("#notification-receiver");
+    const senderButton = document.querySelector("#notification-sender");
+    const receiverControls = document.querySelector("#notification-receiver-controls");
+    const senderControls = document.querySelector("#notification-sender-controls");
+    const notificationModeStatus = document.querySelector("#notification-mode-status");
+    const notificationLog = document.querySelector("#notification-log");
+    let notificationMode = null;
+    let notificationUnsubscribe = null;
+
+    function logNotification(value) {
+      const time = new Date().toLocaleTimeString();
+      notificationLog.textContent = "[" + time + "] " +
+        (typeof value === "string" ? value : JSON.stringify(value, null, 2)) +
+        "\\n" + notificationLog.textContent;
+    }
+
+    function stopNotificationReceiver() {
+      notificationUnsubscribe?.();
+      notificationUnsubscribe = null;
+    }
+
+    async function setNotificationMode(mode) {
+      stopNotificationReceiver();
+      notificationMode = mode;
+      receiverButton.setAttribute("aria-pressed", String(mode === "receiver"));
+      senderButton.setAttribute("aria-pressed", String(mode === "sender"));
+      receiverControls.hidden = mode !== "receiver";
+      senderControls.hidden = mode !== "sender";
+
+      if (mode === "receiver") {
+        const db = getSelectedConnection();
+        if (!db) {
+          notificationModeStatus.textContent = "受信するDBへ先に接続してください。";
+          notificationMode = null;
+          receiverControls.hidden = true;
+          receiverButton.setAttribute("aria-pressed", "false");
+          return;
+        }
+        try {
+          await db.ready;
+          notificationUnsubscribe = db.on("change", (event) => {
+            logNotification({ event: "change", ...event });
+          });
+          db.on("versionchange", (event) => {
+            logNotification({ event: "versionchange", ...event });
+          });
+          notificationModeStatus.textContent = "受信中: " + selectedDb.value;
+          logNotification("受信を開始しました: " + selectedDb.value);
+        } catch (error) {
+          notificationModeStatus.textContent = "受信開始失敗: " + error.message;
+        }
+      } else {
+        notificationModeStatus.textContent = mode === "sender"
+          ? "送信モード: " + (selectedDb.value || "DB未選択")
+          : "モードを選択してください。";
+      }
+    }
+
+    receiverButton.addEventListener("click", () => setNotificationMode("receiver"));
+    senderButton.addEventListener("click", () => setNotificationMode("sender"));
+    document.querySelector("#stop-notification-receiver").addEventListener("click", () => {
+      stopNotificationReceiver();
+      notificationMode = null;
+      receiverControls.hidden = true;
+      receiverButton.setAttribute("aria-pressed", "false");
+      notificationModeStatus.textContent = "受信を停止しました。";
+      logNotification("受信を停止しました。");
+    });
+    document.querySelector("#send-notification").addEventListener("click", async () => {
+      try {
+        const db = getSelectedConnection();
+        if (!db) throw new Error("先に選択したDBへ接続してください。");
+        if (!selectedStore.value) throw new Error("ストアを選択してください。");
+        const raw = document.querySelector("#notification-payload").value.trim();
+        if (!raw) throw new Error("送信するJSONデータを入力してください。");
+        const value = JSON.parse(raw);
+        await db.store(selectedStore.value).add(value);
+        logNotification("送信完了: " + selectedDb.value + " / " + selectedStore.value);
+      } catch (error) {
+        logNotification("送信失敗: " + error.message);
+      }
+    });
 
     await refreshDatabases();
     await refreshSelection();
