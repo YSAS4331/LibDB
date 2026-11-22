@@ -23,17 +23,13 @@ export class Store {
 
   bulkPut(items) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map(({ value, key }) =>
-        key === undefined ? s.put(value) : s.put(value, key)
-      )
+      items.map((value) => s.put(value))
     );
   }
 
   bulkAdd(items) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map(({ value, key }) =>
-        key === undefined ? s.add(value) : s.add(value, key)
-      )
+      items.map((value) => s.add(value))
     );
   }
 
