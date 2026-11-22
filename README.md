@@ -6,6 +6,7 @@ IndexedDBをシンプルに扱うための軽量ラッパーライブラリで�
 
 - Promiseベースのデータベース接続とStore API
 - Store・Indexの定義と取得
+- 不足Store・Indexを検出するバージョン自動管理（`"auto"`）
 - 複数レコードの一括操作
 - 複数Storeをまとめたトランザクション
 - 同一ページ内のLibDBインスタンス間での変更通知
@@ -64,7 +65,7 @@ console.log(user);
 
 ## データベース接続とStore定義
 
-new LibDB(name, version?, stores?)でデータベースに接続します。接続処理は非同期で行われ、db.readyをawaitすると接続完了を待機できます。
+new LibDB(name, version?, stores?)でデータベースに接続します。接続処理は非同期で行われ、db.readyをawaitすると接続完了を待機できます。versionには整数のほか、"auto"を指定できます。
 
 ~~~js
 const db = new LibDB("ExampleDB", 1, {
@@ -93,6 +94,28 @@ Store定義には次の形式を指定できます。
 詳細形式のindexesには配列を指定します。各要素にはname、keyPath、必要に応じてoptionsを指定します。
 
 接続時のアップグレード処理では、定義に含まれる不足StoreやIndexが作成されます。
+
+
+### バージョンの自動管理
+
+versionに`"auto"`を指定すると、LibDBが既存DBのバージョンとStore・Index定義を確認します。不足しているStoreまたはIndexがある場合だけバージョンを1つ上げて追加し、変更がなければ既存バージョンのまま接続します。
+
+```js
+const db = new LibDB("ExampleDB", "auto", {
+  users: {
+    keyPath: "id",
+    autoIncrement: true,
+    indexes: [
+      { name: "byName", keyPath: "name" }
+    ]
+  },
+  logs: {}
+});
+
+await db.ready;
+```
+
+新規DBはバージョン1で作成されます。既存StoreのkeyPath・autoIncrementや既存Indexの定義が指定内容と異なる場合は、自動変更せずエラーにします。StoreやIndexの削除、既存定義の変更は手動でバージョンを指定して行ってください。
 
 ## Store API
 
