@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>LibDB テスト</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      background: #101318;
+      color: #edf0f5;
+    }
+    body {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    h1 { margin-bottom: 8px; }
+    p { color: #aeb7c4; line-height: 1.7; }
+    .panel {
+      margin-top: 24px;
+      padding: 20px;
+      border: 1px solid #303846;
+      border-radius: 14px;
+      background: #191f28;
+    }
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: #7c9cff;
+      color: #101318;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    #status { margin: 16px 0 0; font-weight: 700; }
+    #log {
+      min-height: 180px;
+      margin: 12px 0 0;
+      padding: 14px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border-radius: 8px;
+      background: #0b0e12;
+      color: #d4deed;
+      font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    code { color: #b9ccff; }
+  </style>
+</head>
+<body>
+  <h1>LibDB テスト</h1>
+  <p>
+    jsDelivr 経由で <code>src/index.js</code> を読み込み、
+    IndexedDB の基本操作と再接続を確認します。
+  </p>
+
+  <section class="panel">
+    <button id="run" type="button">テストを実行</button>
+    <p id="status" role="status" aria-live="polite">読み込み中...</p>
+    <pre id="log" aria-live="polite"></pre>
+  </section>
+
+  <script type="module">
+    import { LibDB, LibDBError } from
+      "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/src/index.js";
+
+    const runButton = document.querySelector("#run");
+    const status = document.querySelector("#status");
+    const log = document.querySelector("#log");
+
+    function write(message) {
+      log.textContent += message + "\\n";
+    }
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message);
+      write("✓ " + message);
+    }
+
+    function deleteDatabase(name) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error("DB削除がブロックされました"));
+      });
+    }
+
+    async function runTests() {
+      runButton.disabled = true;
+      log.textContent = "";
+      status.textContent = "テスト実行中...";
+
+      const dbName = "LibDB-Test-" + Date.now();
+      let db;
+
+      try {
+        db = new LibDB(dbName, undefined, {
+          records: "id"
+        });
+        await db.ready;
+        assert(true, "データベース接続");
+
+        const records = db.store("records");
+
+        const firstKey = await records.add({
+          id: 1,
+          name: "Alice",
+          score: 100
+        });
+        await records.add({
+          id: 2,
+          name: "Bob",
+          score: 80
+        });
+        assert(firstKey === 1, "add()");
+
+        const one = await records.get(1);
+        assert(one?.name === "Alice", "get()");
+
+        const all = await records.getAll();
+        assert(all.length === 2, "getAll()");
+
+        const keys = await records.getAllKeys();
+        assert(keys.length === 2 && keys.includes(1) && keys.includes(2), "getAllKeys()");
+
+        const total = await records.count();
+        assert(total === 2, "count()");
+
+        await records.put({
+          id: 1,
+          name: "Alice",
+          score: 120
+        });
+        const updated = await records.get(1);
+        assert(updated.score === 120, "put()");
+
+        await records.delete(2);
+        assert(await records.count() === 1, "delete()");
+
+        await records.clear();
+        assert(await records.count() === 0, "clear()");
+
+        db.close();
+        assert(true, "close()");
+
+        const reconnected = await records.count();
+        assert(reconnected === 0, "close() 後の自動再接続");
+
+        try {
+          await db.store("missing").get(1);
+          throw new Error("存在しないストアのエラーが発生しませんでした");
+        } catch (error) {
+          assert(error instanceof LibDBError, "操作エラーの LibDBError 化");
+        }
+
+        status.textContent = "すべてのテストに成功しました";
+        write("\\nテスト完了");
+      } catch (error) {
+        status.textContent = "テスト失敗";
+        write("✗ " + (error?.stack || error));
+        console.error(error);
+      } finally {
+        db?.close();
+        try {
+          await deleteDatabase(dbName);
+          write("テスト用DBを削除しました");
+        } catch (error) {
+          write("DBの後片付けに失敗: " + error.message);
+        }
+        runButton.disabled = false;
+      }
+    }
+
+    runButton.addEventListener("click", runTests);
+    status.textContent = "ライブラリの読み込みに成功しました";
+    write("jsDelivr から LibDB を読み込みました。");
+  </script>
+</body>
+</html>
