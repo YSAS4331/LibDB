@@ -20,8 +20,8 @@ export class Database {
     if (typeof name !== "string" || !name) {
       throw new TypeError("DB名は空でない文字列で指定してください");
     }
-    if (ver !== undefined && (!Number.isInteger(ver) || ver < 1)) {
-      throw new TypeError("DBのバージョンは1以上の整数で指定してください");
+    if (ver !== undefined && ver !== "auto" && (!Number.isInteger(ver) || ver < 1)) {
+      throw new TypeError("DBのバージョンは1以上の整数または\"auto\"で指定してください");
     }
     if (!stores || typeof stores !== "object" || Array.isArray(stores)) {
       throw new TypeError("storesはオブジェクトで指定してください");
@@ -42,6 +42,135 @@ export class Database {
       throw new TypeError("ストア定義は文字列またはオブジェクトで指定してください");
     }
     return definition;
+  }
+
+  #applyStoreDefinitions(db, upgradeTx) {
+    for (const [name, rawDefinition] of Object.entries(this.#stores)) {
+      const definition = this.#normalizeStoreDefinition(rawDefinition);
+      const { keyPath, autoIncrement, indexes = [] } = definition;
+      let store;
+
+      if (!db.objectStoreNames.contains(name)) {
+        const options = {};
+        if (keyPath !== undefined) options.keyPath = keyPath;
+        if (autoIncrement !== undefined) options.autoIncrement = autoIncrement;
+        store = db.createObjectStore(name, options);
+      } else {
+        store = upgradeTx.objectStore(name);
+        if (keyPath !== undefined && JSON.stringify(store.keyPath) !== JSON.stringify(keyPath)) {
+          throw new TypeError(`ストア「${name}」のkeyPathは既存定義と一致しません`);
+        }
+        if (autoIncrement !== undefined && store.autoIncrement !== autoIncrement) {
+          throw new TypeError(`ストア「${name}」のautoIncrementは既存定義と一致しません`);
+        }
+      }
+
+      if (!Array.isArray(indexes)) {
+        throw new TypeError(`ストア「${name}」のindexesは配列で指定してください`);
+      }
+
+      for (const index of indexes) {
+        if (!index || typeof index.name !== "string" || !index.name || index.keyPath === undefined) {
+          throw new TypeError(`ストア「${name}」のインデックス定義が不正です`);
+        }
+        if (store.indexNames.contains(index.name)) {
+          const current = store.index(index.name);
+          const options = index.options || {};
+          if (
+            JSON.stringify(current.keyPath) !== JSON.stringify(index.keyPath) ||
+            current.unique !== Boolean(options.unique) ||
+            current.multiEntry !== Boolean(options.multiEntry)
+          ) {
+            throw new TypeError(`インデックス「${name}.${index.name}」は既存定義と一致しません`);
+          }
+        } else {
+          store.createIndex(index.name, index.keyPath, index.options || {});
+        }
+      }
+    }
+  }
+
+  #openAuto() {
+    const open = (version) => new Promise((resolve, reject) => {
+      let request;
+      let upgradeError = null;
+      try {
+        request = version === undefined
+          ? indexedDB.open(this.#name)
+          : indexedDB.open(this.#name, version);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
+      request.onupgradeneeded = (event) => {
+        try {
+          this.#applyStoreDefinitions(event.target.result, event.target.transaction);
+        } catch (error) {
+          upgradeError = error;
+          event.target.transaction.abort();
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(upgradeError || request.error);
+      request.onblocked = () => console.warn("Database upgrade blocked.");
+    });
+
+    return (async () => {
+      let db = await open();
+      try {
+        if (db.version > 0) {
+          const missing = [];
+          const tx = db.transaction([...db.objectStoreNames], "readonly");
+          for (const [name, rawDefinition] of Object.entries(this.#stores)) {
+            const definition = this.#normalizeStoreDefinition(rawDefinition);
+            const { keyPath, autoIncrement, indexes = [] } = definition;
+            if (!db.objectStoreNames.contains(name)) {
+              missing.push(name);
+              continue;
+            }
+            const store = tx.objectStore(name);
+            if (keyPath !== undefined && JSON.stringify(store.keyPath) !== JSON.stringify(keyPath)) {
+              throw new TypeError(`ストア「${name}」のkeyPathは既存定義と一致しません`);
+            }
+            if (autoIncrement !== undefined && store.autoIncrement !== autoIncrement) {
+              throw new TypeError(`ストア「${name}」のautoIncrementは既存定義と一致しません`);
+            }
+            if (!Array.isArray(indexes)) {
+              throw new TypeError(`ストア「${name}」のindexesは配列で指定してください`);
+            }
+            for (const index of indexes) {
+              if (!index || typeof index.name !== "string" || !index.name || index.keyPath === undefined) {
+                throw new TypeError(`ストア「${name}」のインデックス定義が不正です`);
+              }
+              if (store.indexNames.contains(index.name)) {
+                const current = store.index(index.name);
+                const options = index.options || {};
+                if (
+                  JSON.stringify(current.keyPath) !== JSON.stringify(index.keyPath) ||
+                  current.unique !== Boolean(options.unique) ||
+                  current.multiEntry !== Boolean(options.multiEntry)
+                ) {
+                  throw new TypeError(`インデックス「${name}.${index.name}」は既存定義と一致しません`);
+                }
+              } else {
+                missing.push(name + "." + index.name);
+              }
+            }
+          }
+          tx.abort();
+          if (missing.length) {
+            const nextVersion = db.version + 1;
+            db.close();
+            db = await open(nextVersion);
+          }
+        }
+        return db;
+      } catch (error) {
+        db.close();
+        throw error;
+      }
+    })();
   }
 
   #setupChannel() {
@@ -124,6 +253,38 @@ export class Database {
   #open() {
     if (this.#opening) return this.#opening;
 
+    if (this.#ver === "auto") {
+      this.#opening = this.#openAuto().then((db) => {
+        this.#db = db;
+        this.#setupChannel();
+        let connections = Database.#connections.get(this.#name);
+        if (!connections) {
+          connections = new Set();
+          Database.#connections.set(this.#name, connections);
+        }
+        connections.add(this);
+        this.#db.onversionchange = (event) => {
+          this.#db?.close();
+          this.#db = null;
+          const current = Database.#connections.get(this.#name);
+          current?.delete(this);
+          if (current?.size === 0) Database.#connections.delete(this.#name);
+          this.#dispatch("versionchange", {
+            database: this.#name,
+            oldVersion: event.oldVersion,
+            newVersion: event.newVersion
+          });
+        };
+        return this;
+      }).catch((error) => {
+        throw new LibDBError("OPEN_FAILED", "DBの接続または自動アップグレードに失敗しました", error);
+      }).finally(() => {
+        this.#opening = null;
+      });
+      this.ready = this.#opening;
+      return this.#opening;
+    }
+
     this.#opening = new Promise((resolve, reject) => {
       let req;
       let upgradeError = null;
@@ -142,33 +303,7 @@ export class Database {
         const upgradeTx = e.target.transaction;
 
         try {
-          for (const [name, rawDefinition] of Object.entries(this.#stores)) {
-            const definition = this.#normalizeStoreDefinition(rawDefinition);
-            const { keyPath, autoIncrement, indexes = [] } = definition;
-
-            let store;
-            if (!db.objectStoreNames.contains(name)) {
-              const options = {};
-              if (keyPath !== undefined) options.keyPath = keyPath;
-              if (autoIncrement !== undefined) options.autoIncrement = autoIncrement;
-              store = db.createObjectStore(name, options);
-            } else {
-              store = upgradeTx.objectStore(name);
-            }
-
-            if (!Array.isArray(indexes)) {
-              throw new TypeError(`ストア「${name}」のindexesは配列で指定してください`);
-            }
-
-            for (const index of indexes) {
-              if (!index || typeof index.name !== "string" || !index.name || index.keyPath === undefined) {
-                throw new TypeError(`ストア「${name}」のインデックス定義が不正です`);
-              }
-              if (!store.indexNames.contains(index.name)) {
-                store.createIndex(index.name, index.keyPath, index.options || {});
-              }
-            }
-          }
+          this.#applyStoreDefinitions(db, upgradeTx);
         } catch (err) {
           upgradeError = err;
           upgradeTx.abort();
