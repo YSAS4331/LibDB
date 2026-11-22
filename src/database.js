@@ -174,9 +174,22 @@ export class Database {
           Database.#connections.set(this.#name, connections);
         }
         connections.add(this);
-        this.#db.onversionchange = () => {
-          this.close();
-          this.ready = Promise.resolve(this);
+        this.#db.onversionchange = (event) => {
+          // A version upgrade invalidates this IndexedDB connection, but the
+          // BroadcastChannel must remain open so this tab can still receive
+          // change notifications from the tab performing the upgrade.
+          this.#db?.close();
+          this.#db = null;
+
+          const connections = Database.#connections.get(this.#name);
+          connections?.delete(this);
+          if (connections?.size === 0) Database.#connections.delete(this.#name);
+
+          this.#dispatch("versionchange", {
+            database: this.#name,
+            oldVersion: event.oldVersion,
+            newVersion: event.newVersion
+          });
         };
         resolve(this);
       };
