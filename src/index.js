@@ -26,6 +26,14 @@ export class LibDB {
     return this.#storeCache.get(name);
   }
 
+  on(type, callback) {
+    return this.#database.on(type, callback);
+  }
+
+  off(type, callback) {
+    return this.#database.off(type, callback);
+  }
+
   transaction(storeNames, mode, callback) {
     return this.#database.transaction(storeNames, mode, callback);
   }
