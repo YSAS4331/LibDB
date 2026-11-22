@@ -22,6 +22,10 @@ export class LibDB {
     return this.#storeCache.get(name);
   }
 
+  transaction(storeNames, mode, callback) {
+    return this.#database.transaction(storeNames, mode, callback);
+  }
+
   close() {
     this.#database.close();
     this.#storeCache.clear();
