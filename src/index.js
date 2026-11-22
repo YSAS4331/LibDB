@@ -7,6 +7,17 @@ export class LibDB {
   #database;
   #storeCache = new Map();
 
+  static get diff() {
+    return Database.diff;
+  }
+
+  static set diff(enabled) {
+    if (typeof enabled !== "boolean") {
+      throw new TypeError("LibDB.diffはbooleanで指定してください");
+    }
+    Database.diff = enabled;
+  }
+
   static delete(name) {
     return Database.delete(name);
   }
