@@ -56,7 +56,7 @@
   <h1>LibDB テスト</h1>
   <p>
     GitHub Pages 経由で <code>src/index.js</code> を読み込み、
-    LibDB の基本操作・一括操作・インデックス・複数ストアトランザクションを確認します。
+    LibDB の基本操作・一括操作・インデックス・複数ストアトランザクション・DB削除を確認します。
   </p>
 
   <section class="panel">
@@ -83,15 +83,6 @@
     function assert(condition, message) {
       if (!condition) throw new Error(message);
       write("✓ " + message);
-    }
-
-    function deleteDatabase(name) {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.deleteDatabase(name);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-        request.onblocked = () => reject(new Error("DB削除がブロックされました"));
-      });
     }
 
     async function runTests() {
@@ -212,8 +203,8 @@
       } finally {
         db?.close();
         try {
-          await deleteDatabase(dbName);
-          write("テスト用DBを削除しました");
+          await LibDB.delete(dbName);
+          write("LibDB.delete() でテスト用DBを削除しました");
         } catch (error) {
           write("DBの後片付けに失敗: " + error.message);
         }
