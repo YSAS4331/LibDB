@@ -7,6 +7,10 @@ export class LibDB {
   #database;
   #storeCache = new Map();
 
+  static delete(name) {
+    return Database.delete(name);
+  }
+
   constructor(name, ver, stores = {}) {
     this.#database = new Database(name, ver, stores);
   }
