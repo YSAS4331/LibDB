@@ -141,25 +141,28 @@ export class Database {
 
       try {
         tx = this.#db.transaction(storeNames, mode);
-        const names = Array.isArray(storeNames) ? storeNames : [storeNames];
-        const stores = Object.fromEntries(
-          names.map((name) => [name, tx.objectStore(name)])
-        );
-        const result = callback(stores, tx);
+        let result;
+        let lastError = null;
 
-        if (result && typeof result.then === "function") {
-          throw new TypeError("transactionのcallback内ではawaitしないでください");
-        }
-
+        tx.onerror = (e) => {
+          lastError = e.target?.error || tx.error || lastError;
+        };
+        tx.onabort = () => fail(tx.error || lastError);
         tx.oncomplete = () => {
           if (settled) return;
           settled = true;
           resolve(result);
         };
-        tx.onabort = () => fail(tx.error);
-        tx.onerror = () => {
-          // エラーの詳細はabort時にまとめて返す
-        };
+
+        const names = Array.isArray(storeNames) ? storeNames : [storeNames];
+        const stores = Object.fromEntries(
+          names.map((name) => [name, tx.objectStore(name)])
+        );
+        result = callback(stores, tx);
+
+        if (result && typeof result.then === "function") {
+          throw new TypeError("transactionのcallback内ではawaitしないでください");
+        }
       } catch (err) {
         try { tx?.abort(); } catch {}
         fail(err);
