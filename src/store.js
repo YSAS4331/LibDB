@@ -30,4 +30,12 @@ export class Store {
   clear() {
     return this.#db.execute(this.#name, "readwrite", (s) => s.clear());
   }
+
+  count() {
+    return this.#db.execute(this.#name, "readonly", (s) => s.count());
+  }
+  
+  getAllKeys() {
+    return this.#db.execute(this.#name, "readonly", (s) => s.getAllKeys());
+  }
 }
