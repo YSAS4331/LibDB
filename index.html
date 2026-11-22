@@ -592,8 +592,7 @@
         let autoDb = new LibDB(autoName, "auto", {
           items: {
             keyPath: "id",
-            autoIncrement: true,
-            indexes: [{ name: "byLabel", keyPath: "label" }]
+            autoIncrement: true
           }
         });
         await autoDb.ready;
@@ -621,6 +620,23 @@
         });
         assert(initialVersion === 1 && upgradedVersion === 2, '"auto" 新規作成・不足Storeの自動アップグレード');
         assert((await autoDb.store("items").get(1))?.label === "preserved", '"auto" アップグレード後も既存データを維持');
+        autoDb.close();
+
+        autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [{ name: "byLabel", keyPath: "label" }]
+          },
+          notes: {}
+        });
+        await autoDb.ready;
+        const stableVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        assert(stableVersion === upgradedVersion, '"auto" スキーマ変更なしではバージョンを維持');
         autoDb.close();
         await LibDB.delete(autoName);
 
