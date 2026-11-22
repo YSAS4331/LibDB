@@ -1,29 +1,33 @@
-import { Database } from "./database.js";
-import { Store } from "./store.js";
+export class Store {
+  #db;
+  #name;
 
-export { LibDBError } from "./errors.js";
-
-export class LibDB {
-  #database;
-  #storeCache = new Map();
-
-  constructor(name, ver = 1, stores = {}) {
-    this.#database = new Database(name, ver, stores);
+  constructor(database, storeName) {
+    this.#db = database;
+    this.#name = storeName;
   }
 
-  get ready() {
-    return this.#database.ready;
+  add(data) {
+    return this.#db.execute(this.#name, "readwrite", (s) => s.add(data));
   }
 
-  store(name) {
-    if (!this.#storeCache.has(name)) {
-      this.#storeCache.set(name, new Store(this.#database, name));
-    }
-    return this.#storeCache.get(name);
+  put(data) {
+    return this.#db.execute(this.#name, "readwrite", (s) => s.put(data));
   }
 
-  close() {
-    this.#database.close();
-    this.#storeCache.clear();
+  get(key) {
+    return this.#db.execute(this.#name, "readonly", (s) => s.get(key));
+  }
+
+  getAll() {
+    return this.#db.execute(this.#name, "readonly", (s) => s.getAll());
+  }
+
+  delete(key) {
+    return this.#db.execute(this.#name, "readwrite", (s) => s.delete(key));
+  }
+
+  clear() {
+    return this.#db.execute(this.#name, "readwrite", (s) => s.clear());
   }
 }
