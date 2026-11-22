@@ -121,7 +121,9 @@ export class Database {
       try {
         if (db.version > 0) {
           const missing = [];
-          const tx = db.transaction([...db.objectStoreNames], "readonly");
+          const tx = db.objectStoreNames.length
+            ? db.transaction([...db.objectStoreNames], "readonly")
+            : null;
           for (const [name, rawDefinition] of Object.entries(this.#stores)) {
             const definition = this.#normalizeStoreDefinition(rawDefinition);
             const { keyPath, autoIncrement, indexes = [] } = definition;
@@ -158,7 +160,7 @@ export class Database {
               }
             }
           }
-          tx.abort();
+          tx?.abort();
           if (missing.length) {
             const nextVersion = db.version + 1;
             db.close();
