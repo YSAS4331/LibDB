@@ -1,6 +1,8 @@
 import { LibDBError, normalizeError } from "./errors.js";
 
 export class Database {
+  static #connections = new Map();
+
   #db = null;
   #name;
   #ver;
@@ -91,9 +93,14 @@ export class Database {
 
       req.onsuccess = (e) => {
         this.#db = e.target.result;
+        let connections = Database.#connections.get(this.#name);
+        if (!connections) {
+          connections = new Set();
+          Database.#connections.set(this.#name, connections);
+        }
+        connections.add(this);
         this.#db.onversionchange = () => {
-          this.#db?.close();
-          this.#db = null;
+          this.close();
           this.ready = Promise.resolve(this);
         };
         resolve(this);
@@ -194,5 +201,35 @@ export class Database {
   close() {
     this.#db?.close();
     this.#db = null;
+
+    const connections = Database.#connections.get(this.#name);
+    connections?.delete(this);
+    if (connections?.size === 0) Database.#connections.delete(this.#name);
+  }
+
+  static delete(name) {
+    if (typeof name !== "string" || !name) {
+      return Promise.reject(new TypeError("DB名は空でない文字列で指定してください"));
+    }
+
+    for (const connection of [...(Database.#connections.get(name) || [])]) {
+      connection.close();
+    }
+
+    return new Promise((resolve, reject) => {
+      let request;
+      try {
+        request = indexedDB.deleteDatabase(name);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => {
+        console.warn("Database deletion blocked: " + name);
+      };
+    });
   }
 }
