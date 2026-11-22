@@ -19,8 +19,8 @@ export class Store {
     return this.#db.execute(this.#name, "readonly", (s) => s.get(key));
   }
 
-  getAll() {
-    return this.#db.execute(this.#name, "readonly", (s) => s.getAll());
+  getAll(query) {
+    return this.#db.execute(this.#name, "readonly", (s) => s.getAll(query));
   }
 
   delete(key) {
