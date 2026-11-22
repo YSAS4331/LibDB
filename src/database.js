@@ -5,8 +5,19 @@ export class Database {
   #name;
   #ver;
   #stores;
+  #opening = null;
 
   constructor(name, ver, stores = {}) {
+    if (typeof name !== "string" || !name) {
+      throw new TypeError("DB名は空でない文字列で指定してください");
+    }
+    if (ver !== undefined && (!Number.isInteger(ver) || ver < 1)) {
+      throw new TypeError("DBのバージョンは1以上の整数で指定してください");
+    }
+    if (!stores || typeof stores !== "object" || Array.isArray(stores)) {
+      throw new TypeError("storesはオブジェクトで指定してください");
+    }
+
     this.#name = name;
     this.#ver = ver;
     this.#stores = stores;
@@ -14,20 +25,36 @@ export class Database {
   }
 
   #open() {
-    return new Promise((resolve, reject) => {
+    if (this.#opening) return this.#opening;
+
+    this.#opening = new Promise((resolve, reject) => {
       let req;
-      if (this.#ver) {
-        req = indexedDB.open(this.#name, this.#ver);
-      } else {
-        req = indexedDB.open(this.#name);
+      let upgradeError = null;
+
+      try {
+        req = this.#ver === undefined
+          ? indexedDB.open(this.#name)
+          : indexedDB.open(this.#name, this.#ver);
+      } catch (err) {
+        reject(new LibDBError("OPEN_FAILED", "DBの接続に失敗しました", err));
+        return;
       }
 
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
-        for (const [name, keyPath] of Object.entries(this.#stores)) {
-          if (!db.objectStoreNames.contains(name)) {
-            db.createObjectStore(name, keyPath ? { keyPath } : undefined);
+
+        try {
+          for (const [name, keyPath] of Object.entries(this.#stores)) {
+            if (!db.objectStoreNames.contains(name)) {
+              const options = keyPath === undefined
+                ? undefined
+                : { keyPath };
+              db.createObjectStore(name, options);
+            }
           }
+        } catch (err) {
+          upgradeError = err;
+          e.target.transaction.abort();
         }
       };
 
@@ -36,20 +63,35 @@ export class Database {
         this.#db.onversionchange = () => {
           this.#db?.close();
           this.#db = null;
+          this.ready = Promise.resolve(this);
         };
         resolve(this);
       };
 
-      req.onerror = () => reject(new LibDBError("OPEN_FAILED", "DBの接続に失敗しました", req.error));
-      req.onblocked = () => console.warn("Database upgrade blocked.");
+      req.onerror = () => {
+        reject(new LibDBError(
+          "OPEN_FAILED",
+          "DBの接続に失敗しました",
+          upgradeError || req.error
+        ));
+      };
+
+      req.onblocked = () => {
+        console.warn("Database upgrade blocked.");
+      };
+    }).finally(() => {
+      this.#opening = null;
     });
+
+    this.ready = this.#opening;
+    return this.#opening;
   }
 
   async #ensure() {
     await this.ready;
+
     if (!this.#db) {
-      this.ready = this.#open();
-      await this.ready;
+      await this.#open();
     }
   }
 
@@ -57,16 +99,33 @@ export class Database {
     await this.#ensure();
 
     return new Promise((resolve, reject) => {
-      const tx = this.#db.transaction(storeName, mode);
-      const req = operation(tx.objectStore(storeName));
-      let result;
+      try {
+        const tx = this.#db.transaction(storeName, mode);
+        const req = operation(tx.objectStore(storeName));
+        let result;
 
-      req.onsuccess = () => {
-        result = req.result;
-      };
-      tx.oncomplete = () => resolve(result);
-      req.onerror = () => reject(normalizeError(req.error));
-      tx.onabort = () => reject(normalizeError(tx.error));
+        if (!req || typeof req !== "object" || !("onsuccess" in req)) {
+          throw new TypeError("operationはIDBRequestを返す必要があります");
+        }
+
+        req.onsuccess = () => {
+          result = req.result;
+        };
+
+        req.onerror = () => {
+          reject(normalizeError(req.error));
+        };
+
+        tx.oncomplete = () => {
+          resolve(result);
+        };
+
+        tx.onabort = () => {
+          reject(normalizeError(tx.error));
+        };
+      } catch (err) {
+        reject(normalizeError(err));
+      }
     });
   }
 
