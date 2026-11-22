@@ -11,13 +11,15 @@ export class Store {
 
   add(value, key) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      key === undefined ? s.add(value) : s.add(value, key), "add"
+      key === undefined ? s.add(value) : s.add(value, key), "add",
+      { type: "add", items: [{ value, key }] }
     );
   }
 
   put(value, key) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      key === undefined ? s.put(value) : s.put(value, key), "put"
+      key === undefined ? s.put(value) : s.put(value, key), "put",
+      { type: "put", items: [{ value, key }] }
     );
   }
 
@@ -25,7 +27,8 @@ export class Store {
     if (!items.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map((value) => s.put(value)), "bulkPut"
+      items.map((value) => s.put(value)), "bulkPut",
+      { type: "put", items: items.map((value) => ({ value })) }
     );
   }
 
@@ -33,7 +36,8 @@ export class Store {
     if (!items.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map((value) => s.add(value)), "bulkAdd"
+      items.map((value) => s.add(value)), "bulkAdd",
+      { type: "add", items: items.map((value) => ({ value })) }
     );
   }
 
@@ -41,7 +45,8 @@ export class Store {
     if (!keys.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      keys.map((key) => s.delete(key)), "bulkDelete"
+      keys.map((key) => s.delete(key)), "bulkDelete",
+      { type: "delete", items: keys.map((key) => ({ key })) }
     );
   }
 
@@ -54,11 +59,15 @@ export class Store {
   }
 
   delete(key) {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.delete(key), "delete");
+    return this.#db.execute(this.#name, "readwrite", (s) => s.delete(key), "delete",
+      { type: "delete", items: [{ key }] }
+    );
   }
 
   clear() {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.clear(), "clear");
+    return this.#db.execute(this.#name, "readwrite", (s) => s.clear(), "clear",
+      { type: "clear" }
+    );
   }
 
   count(query) {
