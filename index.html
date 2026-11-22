@@ -74,7 +74,7 @@
     const log = document.querySelector("#log");
 
     function write(message) {
-      log.textContent += message + "\\n";
+      log.textContent += message + "\n";
     }
 
     function assert(condition, message) {
@@ -160,7 +160,7 @@
         }
 
         status.textContent = "すべてのテストに成功しました";
-        write("\\nテスト完了");
+        write("\nテスト完了");
       } catch (error) {
         status.textContent = "テスト失敗";
         write("✗ " + (error?.stack || error));
