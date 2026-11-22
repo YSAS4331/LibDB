@@ -8,6 +8,8 @@ export class Database {
   #ver;
   #stores;
   #opening = null;
+  #channel = null;
+  #listeners = new Map();
 
   constructor(name, ver, stores = {}) {
     if (typeof name !== "string" || !name) {
@@ -35,6 +37,68 @@ export class Database {
       throw new TypeError("ストア定義は文字列またはオブジェクトで指定してください");
     }
     return definition;
+  }
+
+  #setupChannel() {
+    if (this.#channel || typeof BroadcastChannel === "undefined") return;
+
+    try {
+      this.#channel = new BroadcastChannel(`LibDB:${this.#name}`);
+      this.#channel.onmessage = (event) => {
+        const detail = event.data;
+        if (!detail || detail.type !== "change" || detail.database !== this.#name) return;
+        this.#dispatch("change", detail);
+      };
+    } catch (error) {
+      console.warn("LibDB: BroadcastChannelを利用できません。", error);
+    }
+  }
+
+  #dispatch(type, detail) {
+    for (const listener of this.#listeners.get(type) || []) {
+      try {
+        listener(detail);
+      } catch (error) {
+        console.error("LibDB event listener failed:", error);
+      }
+    }
+  }
+
+  #broadcastChange(change) {
+    if (!this.#channel) return;
+    this.#channel.postMessage({
+      type: "change",
+      database: this.#name,
+      store: change.store ?? null,
+      stores: change.stores ?? (change.store ? [change.store] : []),
+      operation: change.operation || "transaction",
+      timestamp: Date.now()
+    });
+  }
+
+  on(type, callback) {
+    if (typeof type !== "string" || !type) {
+      throw new TypeError("イベント名は空でない文字列で指定してください");
+    }
+    if (typeof callback !== "function") {
+      throw new TypeError("callbackは関数で指定してください");
+    }
+
+    let listeners = this.#listeners.get(type);
+    if (!listeners) {
+      listeners = new Set();
+      this.#listeners.set(type, listeners);
+    }
+    listeners.add(callback);
+
+    return () => this.off(type, callback);
+  }
+
+  off(type, callback) {
+    const listeners = this.#listeners.get(type);
+    if (!listeners) return;
+    listeners.delete(callback);
+    if (listeners.size === 0) this.#listeners.delete(type);
   }
 
   #open() {
@@ -93,6 +157,7 @@ export class Database {
 
       req.onsuccess = (e) => {
         this.#db = e.target.result;
+        this.#setupChannel();
         let connections = Database.#connections.get(this.#name);
         if (!connections) {
           connections = new Set();
@@ -130,7 +195,7 @@ export class Database {
     if (!this.#db) await this.#open();
   }
 
-  async transaction(storeNames, mode, callback) {
+  async transaction(storeNames, mode, callback, change = null) {
     if (typeof callback !== "function") {
       throw new TypeError("callbackは関数で指定してください");
     }
@@ -158,6 +223,13 @@ export class Database {
         tx.oncomplete = () => {
           if (settled) return;
           settled = true;
+          if (mode === "readwrite") {
+            const names = Array.isArray(storeNames) ? storeNames : [storeNames];
+            this.#broadcastChange(change || {
+              stores: names,
+              operation: "transaction"
+            });
+          }
           resolve(result);
         };
 
@@ -177,7 +249,7 @@ export class Database {
     });
   }
 
-  async execute(storeName, mode, operation) {
+  async execute(storeName, mode, operation, operationName = "transaction") {
     let requests;
     const results = [];
 
@@ -193,7 +265,7 @@ export class Database {
           results[index] = req.result;
         };
       }
-    });
+    }, mode === "readwrite" ? { store: storeName, operation: operationName } : null);
 
     return Array.isArray(requests) ? results : results[0];
   }
@@ -201,6 +273,8 @@ export class Database {
   close() {
     this.#db?.close();
     this.#db = null;
+    this.#channel?.close();
+    this.#channel = null;
 
     const connections = Database.#connections.get(this.#name);
     connections?.delete(this);
