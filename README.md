@@ -19,7 +19,7 @@ IndexedDBを扱いやすくする、軽量なラッパーライブラリです�
 ES Modulesとして読み込みます。以下はjsDelivrから読み込む例です。
 
 ```js
-import { LibDB, LibDBError } from "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/src/index.js";
+import { LibDB, LibDBError } from "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/libdb.min.js";
 ```
 
 ## データベースへの接続
@@ -281,7 +281,7 @@ db.on("versionchange", (event) => {
 `LibDBError` は必要に応じてimportして利用できます。
 
 ```js
-import { LibDB, LibDBError } from "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/src/index.js";
+import { LibDB, LibDBError } from "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/libdb.min.js";
 
 try {
   await users.add({ name: "Taro" });
