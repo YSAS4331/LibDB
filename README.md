@@ -53,16 +53,16 @@ await db.store("logs").put({ message: "updated" }, "log-1");
 
 ### 一括操作
 
-一括操作の各要素は `{ value, key? }` 形式です。
+一括操作には保存するデータや削除するキーを配列で渡します。
 
 ```js
 await users.bulkPut([
-  { value: { id: 1, name: "Taro" } },
-  { value: { id: 2, name: "Hanako" } }
+  { id: 1, name: "Taro" },
+  { id: 2, name: "Hanako" }
 ]);
 
 await users.bulkAdd([
-  { value: { id: 3, name: "Jiro" } }
+  { id: 3, name: "Jiro" }
 ]);
 
 await users.bulkDelete([1, 2]);
