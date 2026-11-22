@@ -21,6 +21,16 @@ await db.ready;
 const users = db.store("users");
 ```
 
+## データベースの削除
+
+データベース自体を削除するには、静的メソッド `LibDB.delete(name)` を使用します。
+
+```js
+await LibDB.delete("UsefulTools");
+```
+
+同じLibDBインスタンスが保持している接続は削除前に自動で閉じます。他のタブや別のコードが開いている接続が残っている場合、削除は `blocked` になることがあります。ブロック中は接続が閉じられるまでPromiseは完了しません。
+
 従来の `{ users: "id" }` という文字列形式も引き続き利用できます。
 
 ## Store API
