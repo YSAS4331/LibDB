@@ -7,7 +7,7 @@ export class LibDB {
   #database;
   #storeCache = new Map();
 
-  constructor(name, ver = 1, stores = {}) {
+  constructor(name, ver, stores = {}) {
     this.#database = new Database(name, ver, stores);
   }
 
