@@ -1,0 +1,53 @@
+name: Build minified bundle
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: libdb-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout development source
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: source
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build minified bundle
+        working-directory: source
+        run: npx --yes esbuild@0.25.12 src/index.js --bundle --minify --format=esm --target=es2020 --outfile=libdb.min.js
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Publish bundle to main
+        run: |
+          cp source/libdb.min.js main/libdb.min.js
+          cd main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add libdb.min.js
+          if git diff --cached --quiet; then
+            echo "Bundle is already up to date."
+            exit 0
+          fi
+          git commit -m "build: update minified bundle"
+          git push origin main
