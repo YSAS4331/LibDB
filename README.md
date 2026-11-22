@@ -1,6 +1,6 @@
 # LibDB
 
-IndexedDBを扱いやすくする、軽量なラッパーライブラリです。データベース接続、Store操作、一括操作、複数ストアのトランザクション、別タブへの変更通知に対応しています。
+IndexedDBを扱いやすくする、軽量なラッパーライブラリです。データベース接続、Store操作、一括操作、複数ストアのトランザクション、同一ページ・別タブへの変更通知に対応しています。
 
 ## 目次
 
@@ -149,9 +149,9 @@ await db.transaction(["users", "logs"], "readwrite", (stores, tx) => {
 
 IndexedDBの仕様上、callbackは同期関数にしてください。callback内で `await` は使用できません。
 
-## 別タブへの変更通知
+## 同一ページ・別タブへの変更通知
 
-BroadcastChannelに対応したブラウザでは、同じオリジンで同じDBを開いている別タブから、LibDB経由で変更が行われると `change` イベントを受け取れます。
+同じページ内で同じDBを開いている別々のLibDBインスタンス間、およびBroadcastChannelに対応したブラウザの別タブ間で、LibDB経由の変更を `change` イベントとして受け取れます。同一ページ内の通知は内部で直接配信し、別タブへの通知にはBroadcastChannelを使用します。
 
 ```js
 const unsubscribe = db.on("change", (event) => {
@@ -180,9 +180,9 @@ db.off("change", callback);
 
 Store APIでは `add`、`put`、`bulkAdd`、`bulkPut`、`delete`、`bulkDelete`、`clear` を識別します。複数Storeの `db.transaction()` は `operation: "transaction"` です。
 
-通知はトランザクションが正常に完了した後に送信されます。失敗・中止したトランザクションは通知されません。同じ実行コンテキストから自分自身に送った通知は受信しません。
+通知はトランザクションが正常に完了した後に送信されます。失敗・中止したトランザクションは通知されません。同一ページ内では、同じDB名で接続しているすべてのLibDBインスタンスに通知されます。別タブへの通知では、送信元の実行コンテキスト自身には重複して通知されません。
 
-BroadcastChannel非対応環境では通知機能を利用できません。また、IndexedDBを直接操作した場合や、他のラッパー経由の変更は検知できません。
+BroadcastChannel非対応環境でも同一ページ内の通知は利用できますが、別タブへの通知は利用できません。また、IndexedDBを直接操作した場合や、他のラッパー経由の変更は検知できません。
 
 ## 変更差分（diff）
 
