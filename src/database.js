@@ -1,5 +1,9 @@
 import { LibDBError, normalizeError } from "./errors.js";
 
+const CONTEXT_ID = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+  ? crypto.randomUUID()
+  : `${Date.now()}-${Math.random()}`;
+
 export class Database {
   static #connections = new Map();
 
@@ -46,7 +50,12 @@ export class Database {
       this.#channel = new BroadcastChannel(`LibDB:${this.#name}`);
       this.#channel.onmessage = (event) => {
         const detail = event.data;
-        if (!detail || detail.type !== "change" || detail.database !== this.#name) return;
+        if (
+          !detail ||
+          detail.type !== "change" ||
+          detail.database !== this.#name ||
+          detail.source === CONTEXT_ID
+        ) return;
         this.#dispatch("change", detail);
       };
     } catch (error) {
@@ -69,6 +78,7 @@ export class Database {
     this.#channel.postMessage({
       type: "change",
       database: this.#name,
+      source: CONTEXT_ID,
       store: change.store ?? null,
       stores: change.stores ?? (change.store ? [change.store] : []),
       operation: change.operation || "transaction",
