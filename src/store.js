@@ -11,13 +11,13 @@ export class Store {
 
   add(value, key) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      key === undefined ? s.add(value) : s.add(value, key)
+      key === undefined ? s.add(value) : s.add(value, key), "add"
     );
   }
 
   put(value, key) {
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      key === undefined ? s.put(value) : s.put(value, key)
+      key === undefined ? s.put(value) : s.put(value, key), "put"
     );
   }
 
@@ -25,7 +25,7 @@ export class Store {
     if (!items.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map((value) => s.put(value))
+      items.map((value) => s.put(value)), "bulkPut"
     );
   }
 
@@ -33,7 +33,7 @@ export class Store {
     if (!items.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      items.map((value) => s.add(value))
+      items.map((value) => s.add(value)), "bulkAdd"
     );
   }
 
@@ -41,7 +41,7 @@ export class Store {
     if (!keys.length) return Promise.resolve([]);
 
     return this.#db.execute(this.#name, "readwrite", (s) =>
-      keys.map((key) => s.delete(key))
+      keys.map((key) => s.delete(key)), "bulkDelete"
     );
   }
 
@@ -54,11 +54,11 @@ export class Store {
   }
 
   delete(key) {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.delete(key));
+    return this.#db.execute(this.#name, "readwrite", (s) => s.delete(key), "delete");
   }
 
   clear() {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.clear());
+    return this.#db.execute(this.#name, "readwrite", (s) => s.clear(), "clear");
   }
 
   count(query) {
