@@ -21,6 +21,32 @@ await db.ready;
 const users = db.store("users");
 ```
 
+## 別タブからの変更通知
+
+BroadcastChannelに対応したブラウザでは、同じDBを開いている別タブからLibDB経由でデータが変更されると通知を受け取れます。
+
+```js
+const unsubscribe = db.on("change", (event) => {
+  console.log(event);
+  // {
+  //   type: "change",
+  //   database: "ExampleDB",
+  //   store: "users",
+  //   stores: ["users"],
+  //   operation: "put",
+  //   timestamp: 123456789
+  // }
+});
+
+// 通知が不要になったら解除
+unsubscribe();
+// または db.off("change", callback)
+```
+
+通知対象は、成功したreadwriteトランザクションです。Store APIの操作では `add`、`put`、`bulkAdd`、`bulkPut`、`delete`、`bulkDelete`、`clear` を識別します。複数ストアの `db.transaction()` は `operation: "transaction"` として通知します。
+
+通知は別タブ・同一オリジン間でBroadcastChannelを通じて送られます。BroadcastChannel非対応環境では通知機能は利用できません。また、IndexedDBを直接操作した場合や、別のIndexedDBラッパーによる変更は検知できません。
+
 ## データベースの削除
 
 データベース自体を削除するには、静的メソッド `LibDB.delete(name)` を使用します。
