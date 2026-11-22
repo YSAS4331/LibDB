@@ -55,8 +55,8 @@
 <body>
   <h1>LibDB テスト</h1>
   <p>
-    jsDelivr 経由で <code>src/index.js</code> を読み込み、
-    IndexedDB の基本操作と再接続を確認します。
+    GitHub Pages 経由で <code>src/index.js</code> を読み込み、
+    LibDB の基本操作・一括操作・インデックス・複数ストアトランザクションを確認します。
   </p>
 
   <section class="panel">
@@ -67,7 +67,7 @@
 
   <script type="module">
     import { LibDB, LibDBError } from
-      "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/src/index.js";
+      "https://ysas4331.github.io/LibDB/src/index.js?v=20261122-2";
 
     // DevTools のコンソールからも使えるようにグローバルへ公開
     Object.assign(globalThis, { LibDB, LibDBError });
@@ -103,8 +103,16 @@
       let db;
 
       try {
-        db = new LibDB(dbName, undefined, {
-          records: "id"
+        db = new LibDB(dbName, 1, {
+          records: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [
+              { name: "byName", keyPath: "name" }
+            ]
+          },
+          external: {},
+          logs: {}
         });
         await db.ready;
         assert(true, "データベース接続");
@@ -112,16 +120,14 @@
         const records = db.store("records");
 
         const firstKey = await records.add({
-          id: 1,
           name: "Alice",
           score: 100
         });
         await records.add({
-          id: 2,
           name: "Bob",
           score: 80
         });
-        assert(firstKey === 1, "add()");
+        assert(firstKey === 1, "add() / autoIncrement");
 
         const one = await records.get(1);
         assert(one?.name === "Alice", "get()");
@@ -135,6 +141,12 @@
         const total = await records.count();
         assert(total === 2, "count()");
 
+        const byName = records.index("byName");
+        const alice = await byName.get("Alice");
+        const named = await byName.getAll("Alice");
+        const namedCount = await byName.count("Alice");
+        assert(alice?.name === "Alice" && named.length === 1 && namedCount === 1, "index().get() / getAll() / count()");
+
         await records.put({
           id: 1,
           name: "Alice",
@@ -143,8 +155,34 @@
         const updated = await records.get(1);
         assert(updated.score === 120, "put()");
 
+        await records.bulkAdd([
+          { name: "Carol", score: 70 },
+          { name: "Dave", score: 60 }
+        ]);
+        assert(await records.count() === 4, "bulkAdd()");
+
+        await records.bulkPut([
+          { id: 1, name: "Alice", score: 130 },
+          { id: 2, name: "Bob", score: 90 }
+        ]);
+        assert((await records.get(1)).score === 130, "bulkPut()");
+
+        await records.bulkDelete([3, 4]);
+        assert(await records.count() === 2, "bulkDelete()");
+
+        const external = db.store("external");
+        const externalKey = await external.add({ value: "first" }, "custom-key");
+        await external.put({ value: "updated" }, "custom-key");
+        assert(externalKey === "custom-key" && (await external.get("custom-key")).value === "updated", "add(value, key) / put(value, key)");
+
+        await db.transaction(["records", "logs"], "readwrite", (stores) => {
+          stores.records.put({ id: 10, name: "Transaction", score: 1 });
+          stores.logs.add({ message: "transaction completed" });
+        });
+        assert((await records.get(10))?.name === "Transaction" && await db.store("logs").count() === 1, "db.transaction()");
+
         await records.delete(2);
-        assert(await records.count() === 1, "delete()");
+        assert(await records.count() === 2, "delete()");
 
         await records.clear();
         assert(await records.count() === 0, "clear()");
@@ -182,7 +220,7 @@
 
     runButton.addEventListener("click", runTests);
     status.textContent = "ライブラリの読み込みに成功しました";
-    write("jsDelivr から LibDB を読み込みました。");
+    write("GitHub Pages から LibDB を読み込みました。");
   </script>
 </body>
 </html>
