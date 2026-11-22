@@ -31,11 +31,11 @@ export class Store {
     return this.#db.execute(this.#name, "readwrite", (s) => s.clear());
   }
 
-  count() {
-    return this.#db.execute(this.#name, "readonly", (s) => s.count());
+  count(query) {
+    return this.#db.execute(this.#name, "readonly", (s) => s.count(query));
   }
   
-  getAllKeys() {
-    return this.#db.execute(this.#name, "readonly", (s) => s.getAllKeys());
+  getAllKeys(query, count) {
+    return this.#db.execute(this.#name, "readonly", (s) => s.getAllKeys(query, count));
   }
 }
