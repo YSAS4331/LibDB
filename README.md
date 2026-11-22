@@ -71,7 +71,7 @@ LibDB.diff = false; // 以降の変更通知ではdiffを作成しない
 LibDB.diff = true;  // 再び有効化
 ```
 
-無効化しても変更通知自体（operation、store、timestampなど）は引き続き送信されます。diffは成功した書き込みトランザクションについてのみ通知されます。
+無効化しても変更通知自体（operation、store、timestampなど）は引き続き送信されます。diffは成功したStore APIの書き込み操作について通知されます。複数ストアの `db.transaction()` はネイティブのストアを直接操作するため、現時点ではdiffの対象外です。`clear()` では削除前の全レコードがdiffに含まれるため、件数が多いストアではdiffを無効化してください。
 
 ## データベースの削除
 
