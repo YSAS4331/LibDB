@@ -6,6 +6,7 @@ const CONTEXT_ID = typeof crypto !== "undefined" && typeof crypto.randomUUID ===
 
 export class Database {
   static #connections = new Map();
+  static diff = true;
 
   #db = null;
   #name;
@@ -82,6 +83,7 @@ export class Database {
       store: change.store ?? null,
       stores: change.stores ?? (change.store ? [change.store] : []),
       operation: change.operation || "transaction",
+      ...(change.diff ? { diff: change.diff } : {}),
       timestamp: Date.now()
     });
   }
@@ -272,23 +274,95 @@ export class Database {
     });
   }
 
-  async execute(storeName, mode, operation, operationName = "transaction") {
+  async execute(storeName, mode, operation, operationName = "transaction", diffInfo = null) {
     let requests;
     const results = [];
+    const change = mode === "readwrite"
+      ? { store: storeName, operation: operationName }
+      : null;
 
     await this.transaction(storeName, mode, (stores) => {
-      requests = operation(stores[storeName]);
+      const store = stores[storeName];
+      const trackDiff = Boolean(Database.diff && diffInfo);
+      const changes = [];
+
+      const getPathValue = (value, path) => {
+        if (typeof path !== "string" || !path) return undefined;
+        return path.split(".").reduce((current, part) => current?.[part], value);
+      };
+
+      if (trackDiff && diffInfo.type === "clear") {
+        const beforeRequest = store.getAll();
+        beforeRequest.onsuccess = () => {
+          changes.splice(0, changes.length, ...beforeRequest.result.map((before) => ({
+            key: getPathValue(before, store.keyPath),
+            before,
+            after: null
+          })));
+        };
+      } else if (trackDiff) {
+        for (const item of diffInfo.items || []) {
+          const key = item.key !== undefined
+            ? item.key
+            : getPathValue(item.value, store.keyPath);
+          const entry = { key, before: null, after: null, value: item.value };
+          changes.push(entry);
+          if (key !== undefined && diffInfo.type !== "add") {
+            const beforeRequest = store.get(key);
+            beforeRequest.onsuccess = () => {
+              entry.before = beforeRequest.result ?? null;
+            };
+          }
+        }
+      }
+
+      requests = operation(store);
       const list = Array.isArray(requests) ? requests : [requests];
 
       for (const [index, req] of list.entries()) {
         if (!req || typeof req !== "object" || !("onsuccess" in req)) {
           throw new TypeError("operationはIDBRequestまたはその配列を返す必要があります");
         }
-        req.onsuccess = () => {
+        const originalSuccess = req.onsuccess;
+        req.onsuccess = (event) => {
           results[index] = req.result;
+          if (typeof originalSuccess === "function") originalSuccess.call(req, event);
+
+          if (!trackDiff) return;
+          if (diffInfo.type === "clear") {
+            change.diff = changes;
+            return;
+          }
+
+          const entry = changes[index];
+          if (!entry) return;
+          if (diffInfo.type === "delete") {
+            entry.after = null;
+            return;
+          }
+
+          const key = entry.key !== undefined ? entry.key : req.result;
+          entry.key = key;
+          if (key === undefined) {
+            entry.after = entry.value ?? null;
+            return;
+          }
+
+          const afterRequest = store.get(key);
+          afterRequest.onsuccess = () => {
+            entry.after = afterRequest.result ?? null;
+          };
         };
       }
-    }, mode === "readwrite" ? { store: storeName, operation: operationName } : null);
+
+      if (trackDiff && diffInfo.type === "clear") {
+        // The getAll request is queued before clear(), so its result is the
+        // complete pre-clear snapshot.
+        change.diff = changes;
+      } else if (trackDiff) {
+        change.diff = changes;
+      }
+    }, change);
 
     return Array.isArray(requests) ? results : results[0];
   }
