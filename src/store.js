@@ -22,18 +22,24 @@ export class Store {
   }
 
   bulkPut(items) {
+    if (!items.length) return Promise.resolve([]);
+
     return this.#db.execute(this.#name, "readwrite", (s) =>
       items.map((value) => s.put(value))
     );
   }
 
   bulkAdd(items) {
+    if (!items.length) return Promise.resolve([]);
+
     return this.#db.execute(this.#name, "readwrite", (s) =>
       items.map((value) => s.add(value))
     );
   }
 
   bulkDelete(keys) {
+    if (!keys.length) return Promise.resolve([]);
+
     return this.#db.execute(this.#name, "readwrite", (s) =>
       keys.map((key) => s.delete(key))
     );
