@@ -387,3 +387,7 @@ try {
 - db.transaction()のcallback内ではawaitを使用できません。
 - db.transaction()による複数Store操作は変更通知されますが、現時点ではdiffの対象外です。
 - diffの生成には追加のIndexedDBリクエストが発生します。clear()で大量のレコードを削除する場合は、必要に応じてdiffを無効にしてください。
+
+## ライセンス
+
+本ライブラリはMITライセンスのもとで公開されています。
