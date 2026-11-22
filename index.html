@@ -466,18 +466,19 @@
     const notificationModeStatus = document.querySelector("#notification-mode-status");
     const notificationLog = document.querySelector("#notification-log");
     let notificationMode = null;
-    let notificationUnsubscribe = null;
+    let notificationUnsubscribers = [];
 
     function logNotification(value) {
       const time = new Date().toLocaleTimeString();
       notificationLog.textContent = "[" + time + "] " +
         (typeof value === "string" ? value : JSON.stringify(value, null, 2)) +
         "\\n" + notificationLog.textContent;
+      console.log("[LibDB notification]", value);
     }
 
     function stopNotificationReceiver() {
-      notificationUnsubscribe?.();
-      notificationUnsubscribe = null;
+      for (const unsubscribe of notificationUnsubscribers) unsubscribe();
+      notificationUnsubscribers = [];
     }
 
     async function setNotificationMode(mode) {
@@ -499,12 +500,14 @@
         }
         try {
           await db.ready;
-          notificationUnsubscribe = db.on("change", (event) => {
-            logNotification({ event: "change", ...event });
-          });
-          db.on("versionchange", (event) => {
-            logNotification({ event: "versionchange", ...event });
-          });
+          notificationUnsubscribers.push(
+            db.on("change", (event) => {
+              logNotification({ event: "change", ...event });
+            }),
+            db.on("versionchange", (event) => {
+              logNotification({ event: "versionchange", ...event });
+            })
+          );
           notificationModeStatus.textContent = "受信中: " + selectedDb.value;
           logNotification("受信を開始しました: " + selectedDb.value);
         } catch (error) {
