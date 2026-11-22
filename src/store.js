@@ -1,3 +1,5 @@
+import { Index } from "./index-store.js";
+
 export class Store {
   #db;
   #name;
@@ -7,12 +9,38 @@ export class Store {
     this.#name = storeName;
   }
 
-  add(data) {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.add(data));
+  add(value, key) {
+    return this.#db.execute(this.#name, "readwrite", (s) =>
+      key === undefined ? s.add(value) : s.add(value, key)
+    );
   }
 
-  put(data) {
-    return this.#db.execute(this.#name, "readwrite", (s) => s.put(data));
+  put(value, key) {
+    return this.#db.execute(this.#name, "readwrite", (s) =>
+      key === undefined ? s.put(value) : s.put(value, key)
+    );
+  }
+
+  bulkPut(items) {
+    return this.#db.execute(this.#name, "readwrite", (s) =>
+      items.map(({ value, key }) =>
+        key === undefined ? s.put(value) : s.put(value, key)
+      )
+    );
+  }
+
+  bulkAdd(items) {
+    return this.#db.execute(this.#name, "readwrite", (s) =>
+      items.map(({ value, key }) =>
+        key === undefined ? s.add(value) : s.add(value, key)
+      )
+    );
+  }
+
+  bulkDelete(keys) {
+    return this.#db.execute(this.#name, "readwrite", (s) =>
+      keys.map((key) => s.delete(key))
+    );
   }
 
   get(key) {
@@ -34,8 +62,12 @@ export class Store {
   count(query) {
     return this.#db.execute(this.#name, "readonly", (s) => s.count(query));
   }
-  
+
   getAllKeys(query, count) {
     return this.#db.execute(this.#name, "readonly", (s) => s.getAllKeys(query, count));
+  }
+
+  index(name) {
+    return new Index(this.#db, this.#name, name);
   }
 }
