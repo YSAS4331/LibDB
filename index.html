@@ -37,6 +37,34 @@
       cursor: pointer;
     }
     button:disabled { opacity: .55; cursor: wait; }
+    input {
+      min-width: 0;
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #465267;
+      border-radius: 8px;
+      background: #0b0e12;
+      color: inherit;
+      font: inherit;
+    }
+    .form-row, .db-row, .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .db-list { display: grid; gap: 10px; margin-top: 16px; }
+    .db-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px;
+      border: 1px solid #303846;
+      border-radius: 10px;
+      background: #111720;
+    }
+    .db-meta { min-width: 0; overflow-wrap: anywhere; }
+    .db-meta strong { display: block; }
+    .db-meta small { color: #aeb7c4; }
+    button.secondary { background: #354256; color: #edf0f5; }
+    button.danger { background: #a94755; color: white; }
     #status { margin: 16px 0 0; font-weight: 700; }
     #log {
       min-height: 180px;
@@ -60,6 +88,18 @@
   </p>
 
   <section class="panel">
+    <h2>データベース管理</h2>
+    <p>デモ用のデータベースを追加したり、接続・削除したりできます。</p>
+    <form id="add-db-form" class="form-row">
+      <input id="db-name" name="name" placeholder="データベース名" maxlength="80" required>
+      <button type="submit">Databaseを追加</button>
+    </form>
+    <div id="db-list" class="db-list" aria-live="polite"></div>
+    <p id="db-status" role="status" aria-live="polite">一覧を読み込み中...</p>
+  </section>
+
+  <section class="panel">
+    <h2>ライブラリテスト</h2>
     <button id="run" type="button">テストを実行</button>
     <p id="status" role="status" aria-live="polite">読み込み中...</p>
     <pre id="log" aria-live="polite"></pre>
@@ -67,10 +107,118 @@
 
   <script type="module">
     import { LibDB, LibDBError } from
-      "https://ysas4331.github.io/LibDB/src/index.js?v=20261122-3";
+      "https://ysas4331.github.io/LibDB/src/index.js?v=20261122-4";
 
     // DevTools のコンソールからも使えるようにグローバルへ公開
     Object.assign(globalThis, { LibDB, LibDBError });
+
+    const openDatabases = new Map();
+    const dbList = document.querySelector("#db-list");
+    const dbStatus = document.querySelector("#db-status");
+    const addDbForm = document.querySelector("#add-db-form");
+
+    async function refreshDatabases() {
+      if (typeof indexedDB.databases !== "function") {
+        dbStatus.textContent = "このブラウザはデータベース一覧取得に対応していません。";
+        return;
+      }
+
+      try {
+        const databases = (await indexedDB.databases())
+          .filter((item) => item.name)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        dbList.replaceChildren();
+
+        if (databases.length === 0) {
+          dbList.textContent = "データベースはありません。";
+        }
+
+        for (const item of databases) {
+          const row = document.createElement("div");
+          row.className = "db-item";
+
+          const meta = document.createElement("div");
+          meta.className = "db-meta";
+          const title = document.createElement("strong");
+          title.textContent = item.name;
+          const detail = document.createElement("small");
+          detail.textContent = "Version " + (item.version ?? "不明") +
+            (openDatabases.has(item.name) ? " ・このページで接続中" : "");
+          meta.append(title, detail);
+
+          const actions = document.createElement("div");
+          actions.className = "actions";
+          const connect = document.createElement("button");
+          connect.className = "secondary";
+          connect.textContent = openDatabases.has(item.name) ? "接続済み" : "接続";
+          connect.disabled = openDatabases.has(item.name);
+          connect.addEventListener("click", async () => {
+            try {
+              const connection = new LibDB(item.name);
+              await connection.ready;
+              openDatabases.set(item.name, connection);
+              dbStatus.textContent = item.name + " に接続しました。";
+              await refreshDatabases();
+            } catch (error) {
+              dbStatus.textContent = "接続失敗: " + error.message;
+            }
+          });
+
+          const remove = document.createElement("button");
+          remove.className = "danger";
+          remove.textContent = "削除";
+          remove.addEventListener("click", async () => {
+            if (!confirm("「" + item.name + "」を削除しますか？\n保存されているデータもすべて削除されます。")) return;
+            remove.disabled = true;
+            try {
+              await LibDB.delete(item.name);
+              openDatabases.delete(item.name);
+              dbStatus.textContent = item.name + " を削除しました。";
+              await refreshDatabases();
+            } catch (error) {
+              dbStatus.textContent = "削除失敗: " + error.message;
+              remove.disabled = false;
+            }
+          });
+
+          actions.append(connect, remove);
+          row.append(meta, actions);
+          dbList.append(row);
+        }
+
+        dbStatus.textContent = databases.length + " 件のデータベース";
+      } catch (error) {
+        dbStatus.textContent = "一覧取得失敗: " + error.message;
+      }
+    }
+
+    addDbForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.querySelector("#db-name");
+      const name = input.value.trim();
+      if (!name) return;
+
+      try {
+        const existing = (await indexedDB.databases()).some((item) => item.name === name);
+        if (existing) {
+          dbStatus.textContent = "同じ名前のデータベースが既にあります。";
+          return;
+        }
+
+        const connection = new LibDB(name, 1, {
+          demo: { keyPath: "id", autoIncrement: true }
+        });
+        await connection.ready;
+        openDatabases.set(name, connection);
+        input.value = "";
+        dbStatus.textContent = name + " を追加しました。demoストアを作成しました。";
+        await refreshDatabases();
+      } catch (error) {
+        dbStatus.textContent = "追加失敗: " + error.message;
+      }
+    });
+
+    await refreshDatabases();
 
     const runButton = document.querySelector("#run");
     const status = document.querySelector("#status");
