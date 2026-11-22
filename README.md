@@ -7,7 +7,7 @@
 ```js
 import { LibDB, LibDBError } from "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/src/index.js";
 
-const db = new LibDB("UsefulTools", 1, {
+const db = new LibDB("ExampleDB", 1, {
   users: {
     keyPath: "id",
     autoIncrement: true,
@@ -26,7 +26,7 @@ const users = db.store("users");
 データベース自体を削除するには、静的メソッド `LibDB.delete(name)` を使用します。
 
 ```js
-await LibDB.delete("UsefulTools");
+await LibDB.delete("ExampleDB");
 ```
 
 同じLibDBインスタンスが保持している接続は削除前に自動で閉じます。他のタブや別のコードが開いている接続が残っている場合、削除は `blocked` になることがあります。ブロック中は接続が閉じられるまでPromiseは完了しません。
