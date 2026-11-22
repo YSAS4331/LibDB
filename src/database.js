@@ -75,8 +75,7 @@ export class Database {
   }
 
   #broadcastChange(change) {
-    if (!this.#channel) return;
-    this.#channel.postMessage({
+    const detail = {
       type: "change",
       database: this.#name,
       source: CONTEXT_ID,
@@ -85,7 +84,16 @@ export class Database {
       operation: change.operation || "transaction",
       ...(change.diff ? { diff: change.diff } : {}),
       timestamp: Date.now()
-    });
+    };
+
+    // Notify every LibDB connection for this database in the current page.
+    // BroadcastChannel does not deliver a message back to its sending context.
+    for (const connection of Database.#connections.get(this.#name) || []) {
+      connection.#dispatch("change", detail);
+    }
+
+    // Notify other tabs/windows. Local listeners are handled above.
+    this.#channel?.postMessage(detail);
   }
 
   on(type, callback) {
