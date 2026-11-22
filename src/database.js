@@ -6,7 +6,7 @@ export class Database {
   #ver;
   #stores;
 
-  constructor(name, ver = 1, stores = {}) {
+  constructor(name, ver, stores = {}) {
     this.#name = name;
     this.#ver = ver;
     this.#stores = stores;
@@ -15,7 +15,12 @@ export class Database {
 
   #open() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(this.#name, this.#ver);
+      let req;
+      if (this.#ver) {
+        req = indexedDB.open(this.#name, this.#ver);
+      } else {
+        req = indexedDB.open(this.#name);
+      }
 
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
