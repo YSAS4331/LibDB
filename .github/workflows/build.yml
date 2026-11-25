@@ -1,4 +1,4 @@
-name: Build minified bundle
+name: Build and publish
 
 on:
   push:
@@ -38,16 +38,23 @@ jobs:
           ref: main
           path: main
 
-      - name: Publish bundle to main
+      - name: Sync files outside src to main
         run: |
-          cp source/libdb.min.js main/libdb.min.js
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='src/' \
+            --exclude='demo/' \
+            source/ main/
+
+      - name: Publish changes to main
+        run: |
           cd main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add libdb.min.js
+          git add -A
           if git diff --cached --quiet; then
-            echo "Bundle is already up to date."
+            echo "Main is already up to date."
             exit 0
           fi
-          git commit -m "build: update minified bundle"
+          git commit -m "build: sync development files"
           git push origin main
