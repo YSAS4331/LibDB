@@ -83,7 +83,7 @@
 <body>
   <h1>LibDB テスト</h1>
   <p>
-    GitHub Pages 経由で <code>libdb.min.js</code> を読み込み、
+    GitHub Pages 経由で <code>src/index.js</code> を読み込み、
     LibDB の基本操作・一括操作・インデックス・複数ストアトランザクション・DB削除を確認します。
   </p>
 
@@ -162,7 +162,7 @@
 
   <script type="module">
     import { LibDB, LibDBError } from
-      "https://cdn.jsdelivr.net/gh/YSAS4331/LibDB@main/libdb.min.js";
+      "https://ysas4331.github.io/LibDB/src/index.js?v=20261122-8";
 
     // DevTools のコンソールからも使えるようにグローバルへ公開
     Object.assign(globalThis, { LibDB, LibDBError });
@@ -585,7 +585,61 @@
           }
         });
         await db.ready;
+
         assert(true, "データベース接続");
+
+        const autoName = dbName + "-auto";
+        let autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true
+          }
+        });
+        await autoDb.ready;
+        const initialVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        await autoDb.store("items").add({ label: "preserved" });
+        autoDb.close();
+
+        autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [{ name: "byLabel", keyPath: "label" }]
+          },
+          notes: {}
+        });
+        await autoDb.ready;
+        const upgradedVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        assert(initialVersion === 1 && upgradedVersion === 2, '"auto" 新規作成・不足Store/Indexの自動アップグレード');
+        assert((await autoDb.store("items").get(1))?.label === "preserved", '"auto" アップグレード後も既存データを維持');
+        autoDb.close();
+
+        autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [{ name: "byLabel", keyPath: "label" }]
+          },
+          notes: {}
+        });
+        await autoDb.ready;
+        const stableVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        assert(stableVersion === upgradedVersion, '"auto" スキーマ変更なしではバージョンを維持');
+        autoDb.close();
+        await LibDB.delete(autoName);
+
 
         const records = db.store("records");
 
