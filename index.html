@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>LibDB テスト</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      background: #101318;
+      color: #edf0f5;
+    }
+    body {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    h1 { margin-bottom: 8px; }
+    p { color: #aeb7c4; line-height: 1.7; }
+    .panel {
+      margin-top: 24px;
+      padding: 20px;
+      border: 1px solid #303846;
+      border-radius: 14px;
+      background: #191f28;
+    }
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: #7c9cff;
+      color: #101318;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    input {
+      min-width: 0;
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #465267;
+      border-radius: 8px;
+      background: #0b0e12;
+      color: inherit;
+      font: inherit;
+    }
+    .form-row, .db-row, .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .db-list { display: grid; gap: 10px; margin-top: 16px; }
+    .db-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px;
+      border: 1px solid #303846;
+      border-radius: 10px;
+      background: #111720;
+    }
+    .db-meta { min-width: 0; overflow-wrap: anywhere; }
+    .db-meta strong { display: block; }
+    .db-meta small { color: #aeb7c4; }
+    button.secondary { background: #354256; color: #edf0f5; }
+    button.danger { background: #a94755; color: white; }
+    #status { margin: 16px 0 0; font-weight: 700; }
+    #log {
+      min-height: 180px;
+      margin: 12px 0 0;
+      padding: 14px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border-radius: 8px;
+      background: #0b0e12;
+      color: #d4deed;
+      font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    code { color: #b9ccff; }
+  </style>
+</head>
+<body>
+  <h1>LibDB テスト</h1>
+  <p>
+    GitHub Pages 経由で <code>src/index.js</code> を読み込み、
+    LibDB の基本操作・一括操作・インデックス・複数ストアトランザクション・DB削除を確認します。
+  </p>
+
+  <section class="panel">
+    <h2>データベース管理</h2>
+    <p>デモ用のデータベースを追加したり、接続・削除したりできます。</p>
+    <form id="add-db-form" class="form-row">
+      <input id="db-name" name="name" placeholder="データベース名" maxlength="80" required>
+      <button type="submit">Databaseを追加</button>
+    </form>
+    <div id="db-list" class="db-list" aria-live="polite"></div>
+    <p id="db-status" role="status" aria-live="polite">一覧を読み込み中...</p>
+  </section>
+
+  <section class="panel">
+    <h2>選択したデータベースの操作</h2>
+    <div class="form-row">
+      <select id="selected-db" aria-label="データベース選択" style="min-width:0;flex:1;padding:10px;border-radius:8px;background:#0b0e12;color:inherit;border:1px solid #465267"></select>
+      <button id="refresh-selection" class="secondary" type="button">更新</button>
+    </div>
+    <p id="selection-status" role="status" aria-live="polite">DBを選択してください。</p>
+    <div class="actions">
+      <button id="connect-selected" type="button">接続</button>
+      <button id="disconnect-selected" class="secondary" type="button">切断</button>
+      <button id="delete-selected" class="danger" type="button">DB削除</button>
+    </div>
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid #303846">
+      <h3>ストア操作</h3>
+      <div class="form-row">
+        <select id="selected-store" aria-label="ストア選択" style="min-width:0;flex:1;padding:10px;border-radius:8px;background:#0b0e12;color:inherit;border:1px solid #465267"></select>
+        <button id="refresh-stores" class="secondary" type="button">ストア更新</button>
+      </div>
+      <div class="form-row" style="margin-top:10px">
+        <input id="record-key" placeholder="キー（JSON形式。例: 1 / \"abc\"）">
+      </div>
+      <textarea id="record-value" rows="5" placeholder='JSONデータ（例: {"name":"Alice","score":100}）' style="box-sizing:border-box;width:100%;margin-top:10px;padding:10px;border:1px solid #465267;border-radius:8px;background:#0b0e12;color:inherit;font:13px/1.6 ui-monospace,monospace"></textarea>
+      <div class="actions" style="margin-top:10px">
+        <button id="add-record" type="button">追加</button>
+        <button id="put-record" type="button">保存・上書き</button>
+        <button id="get-record" class="secondary" type="button">キーで取得</button>
+        <button id="delete-record" class="danger" type="button">キーで削除</button>
+        <button id="count-records" class="secondary" type="button">件数</button>
+        <button id="get-all-records" class="secondary" type="button">全件取得</button>
+        <button id="get-all-keys" class="secondary" type="button">全キー取得</button>
+        <button id="clear-store" class="danger" type="button">ストアを空にする</button>
+      </div>
+      <pre id="operation-output" style="min-height:100px;margin:12px 0 0;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;border-radius:8px;background:#0b0e12;color:#d4deed;font:13px/1.6 ui-monospace,monospace" aria-live="polite"></pre>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>タブ間通知テスト</h2>
+    <p>同じデータベースを開いた別タブ間で、書き込み通知を送受信します。先に上の「選択したデータベース」でDBへ接続し、ストアを選んでください。</p>
+    <div class="actions" role="group" aria-label="通知モード">
+      <button id="notification-receiver" class="secondary" type="button" aria-pressed="false">受信モード</button>
+      <button id="notification-sender" class="secondary" type="button" aria-pressed="false">送信モード</button>
+    </div>
+    <p id="notification-mode-status" role="status" aria-live="polite">モードを選択してください。</p>
+    <div id="notification-receiver-controls" hidden>
+      <p>受信モードでは、このタブへの変更通知を表示します。DBのバージョン変更で接続が閉じられても、通知チャンネルは維持します。</p>
+      <button id="stop-notification-receiver" class="secondary" type="button">受信停止</button>
+    </div>
+    <div id="notification-sender-controls" hidden>
+      <textarea id="notification-payload" rows="3" placeholder='送信するJSONデータ（例: {"message":"hello"}）' style="box-sizing:border-box;width:100%;margin:10px 0;padding:10px;border:1px solid #465267;border-radius:8px;background:#0b0e12;color:inherit;font:13px/1.6 ui-monospace,monospace"></textarea>
+      <button id="send-notification" type="button">データを書き込んで通知</button>
+    </div>
+    <pre id="notification-log" style="min-height:100px;margin:12px 0 0;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;border-radius:8px;background:#0b0e12;color:#d4deed;font:13px/1.6 ui-monospace,monospace" aria-live="polite"></pre>
+  </section>
+
+  <section class="panel">
+    <h2>ライブラリテスト</h2>
+    <button id="run" type="button">テストを実行</button>
+    <p id="status" role="status" aria-live="polite">読み込み中...</p>
+    <pre id="log" aria-live="polite"></pre>
+  </section>
+
+  <script type="module">
+    import { LibDB, LibDBError } from
+      "https://ysas4331.github.io/LibDB/src/index.js?v=20261122-8";
+
+    // DevTools のコンソールからも使えるようにグローバルへ公開
+    Object.assign(globalThis, { LibDB, LibDBError });
+
+    const openDatabases = new Map();
+    const dbList = document.querySelector("#db-list");
+    const dbStatus = document.querySelector("#db-status");
+    const addDbForm = document.querySelector("#add-db-form");
+
+    async function refreshDatabases() {
+      if (typeof indexedDB.databases !== "function") {
+        dbStatus.textContent = "このブラウザはデータベース一覧取得に対応していません。";
+        return;
+      }
+
+      try {
+        const databases = (await indexedDB.databases())
+          .filter((item) => item.name)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        dbList.replaceChildren();
+
+        if (databases.length === 0) {
+          dbList.textContent = "データベースはありません。";
+        }
+
+        for (const item of databases) {
+          const row = document.createElement("div");
+          row.className = "db-item";
+
+          const meta = document.createElement("div");
+          meta.className = "db-meta";
+          const title = document.createElement("strong");
+          title.textContent = item.name;
+          const detail = document.createElement("small");
+          detail.textContent = "Version " + (item.version ?? "不明") +
+            (openDatabases.has(item.name) ? " ・このページで接続中" : "");
+          meta.append(title, detail);
+
+          const actions = document.createElement("div");
+          actions.className = "actions";
+          const connect = document.createElement("button");
+          connect.className = "secondary";
+          connect.textContent = openDatabases.has(item.name) ? "接続済み" : "接続";
+          connect.disabled = openDatabases.has(item.name);
+          connect.addEventListener("click", async () => {
+            try {
+              const connection = new LibDB(item.name);
+              await connection.ready;
+              openDatabases.set(item.name, connection);
+              dbStatus.textContent = item.name + " に接続しました。";
+              await refreshDatabases();
+            } catch (error) {
+              dbStatus.textContent = "接続失敗: " + error.message;
+            }
+          });
+
+          const remove = document.createElement("button");
+          remove.className = "danger";
+          remove.textContent = "削除";
+          remove.addEventListener("click", async () => {
+            if (!confirm("「" + item.name + "」を削除しますか？\n保存されているデータもすべて削除されます。")) return;
+            remove.disabled = true;
+            try {
+              await LibDB.delete(item.name);
+              openDatabases.delete(item.name);
+              dbStatus.textContent = item.name + " を削除しました。";
+              await refreshDatabases();
+            } catch (error) {
+              dbStatus.textContent = "削除失敗: " + error.message;
+              remove.disabled = false;
+            }
+          });
+
+          actions.append(connect, remove);
+          row.append(meta, actions);
+          dbList.append(row);
+        }
+
+        dbStatus.textContent = databases.length + " 件のデータベース";
+      } catch (error) {
+        dbStatus.textContent = "一覧取得失敗: " + error.message;
+      }
+    }
+
+    addDbForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.querySelector("#db-name");
+      const name = input.value.trim();
+      if (!name) return;
+
+      try {
+        const existing = (await indexedDB.databases()).some((item) => item.name === name);
+        if (existing) {
+          dbStatus.textContent = "同じ名前のデータベースが既にあります。";
+          return;
+        }
+
+        const connection = new LibDB(name, 1, {
+          demo: { keyPath: "id", autoIncrement: true }
+        });
+        await connection.ready;
+        openDatabases.set(name, connection);
+        input.value = "";
+        dbStatus.textContent = name + " を追加しました。demoストアを作成しました。";
+        await refreshDatabases();
+      } catch (error) {
+        dbStatus.textContent = "追加失敗: " + error.message;
+      }
+    });
+
+    const selectedDb = document.querySelector("#selected-db");
+    const selectedStore = document.querySelector("#selected-store");
+    const selectionStatus = document.querySelector("#selection-status");
+    const operationOutput = document.querySelector("#operation-output");
+
+    function getSelectedConnection() {
+      return openDatabases.get(selectedDb.value) || null;
+    }
+
+    function output(value) {
+      operationOutput.textContent = typeof value === "string"
+        ? value
+        : JSON.stringify(value, null, 2);
+    }
+
+    function readKey() {
+      const raw = document.querySelector("#record-key").value.trim();
+      if (!raw) throw new Error("キーを入力してください。");
+      try { return JSON.parse(raw); } catch { return raw; }
+    }
+
+    function readValue() {
+      const raw = document.querySelector("#record-value").value.trim();
+      if (!raw) throw new Error("JSONデータを入力してください。");
+      return JSON.parse(raw);
+    }
+
+    async function refreshStoreList() {
+      selectedStore.replaceChildren();
+      const name = selectedDb.value;
+      if (!name) return;
+
+      let temporaryDb;
+      try {
+        const connected = getSelectedConnection();
+        if (connected) {
+          await connected.ready;
+          temporaryDb = null;
+          const names = await new Promise((resolve) => {
+            // 接続中のDBのストア名は、同じDBを一時接続して取得する
+            const request = indexedDB.open(name);
+            request.onsuccess = () => {
+              const db = request.result;
+              const list = [...db.objectStoreNames];
+              db.close();
+              resolve(list);
+            };
+            request.onerror = () => resolve([]);
+          });
+          for (const storeName of names) {
+            const option = document.createElement("option");
+            option.value = storeName;
+            option.textContent = storeName;
+            selectedStore.append(option);
+          }
+        } else {
+          temporaryDb = await new Promise((resolve, reject) => {
+            const request = indexedDB.open(name);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+            request.onblocked = () => reject(new Error("別の接続によってブロックされています。"));
+          });
+          for (const storeName of temporaryDb.objectStoreNames) {
+            const option = document.createElement("option");
+            option.value = storeName;
+            option.textContent = storeName;
+            selectedStore.append(option);
+          }
+        }
+        if (!selectedStore.options.length) output("このDBにストアはありません。");
+      } catch (error) {
+        output("ストア一覧の取得に失敗: " + error.message);
+      } finally {
+        temporaryDb?.close();
+      }
+    }
+
+    async function refreshSelection() {
+      const previous = selectedDb.value;
+      selectedDb.replaceChildren();
+      if (typeof indexedDB.databases !== "function") {
+        selectionStatus.textContent = "このブラウザはDB一覧取得に対応していません。";
+        return;
+      }
+      const databases = (await indexedDB.databases())
+        .filter((item) => item.name)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      for (const item of databases) {
+        const option = document.createElement("option");
+        option.value = item.name;
+        option.textContent = item.name + (openDatabases.has(item.name) ? "（接続済み）" : "（切断）");
+        selectedDb.append(option);
+      }
+      if ([...selectedDb.options].some((option) => option.value === previous)) {
+        selectedDb.value = previous;
+      }
+      const connected = Boolean(getSelectedConnection());
+      selectionStatus.textContent = selectedDb.value
+        ? selectedDb.value + (connected ? " に接続中です。" : " は切断状態です。")
+        : "データベースがありません。";
+      document.querySelector("#connect-selected").disabled = !selectedDb.value || connected;
+      document.querySelector("#disconnect-selected").disabled = !connected;
+      document.querySelector("#delete-selected").disabled = !selectedDb.value;
+      await refreshStoreList();
+    }
+
+    async function withSelectedStore(action) {
+      const db = getSelectedConnection();
+      if (!db) throw new Error("先に選択したDBへ接続してください。");
+      if (!selectedStore.value) throw new Error("ストアを選択してください。");
+      await db.ready;
+      return action(db.store(selectedStore.value));
+    }
+
+    document.querySelector("#refresh-selection").addEventListener("click", async () => {
+      await refreshDatabases();
+      await refreshSelection();
+    });
+    selectedDb.addEventListener("change", async () => {
+      await refreshSelection();
+      output("");
+    });
+    document.querySelector("#connect-selected").addEventListener("click", async () => {
+      const name = selectedDb.value;
+      if (!name) return;
+      try {
+        const db = new LibDB(name);
+        await db.ready;
+        openDatabases.set(name, db);
+        await refreshDatabases();
+        await refreshSelection();
+      } catch (error) {
+        selectionStatus.textContent = "接続失敗: " + error.message;
+      }
+    });
+    document.querySelector("#disconnect-selected").addEventListener("click", async () => {
+      const name = selectedDb.value;
+      openDatabases.get(name)?.close();
+      openDatabases.delete(name);
+      await refreshDatabases();
+      await refreshSelection();
+    });
+    document.querySelector("#delete-selected").addEventListener("click", async () => {
+      const name = selectedDb.value;
+      if (!name || !confirm("「" + name + "」と保存データをすべて削除しますか？")) return;
+      try {
+        await LibDB.delete(name);
+        openDatabases.delete(name);
+        await refreshDatabases();
+        await refreshSelection();
+        output(name + " を削除しました。");
+      } catch (error) {
+        selectionStatus.textContent = "削除失敗: " + error.message;
+      }
+    });
+    document.querySelector("#refresh-stores").addEventListener("click", refreshStoreList);
+
+    const storeActions = {
+      "add-record": async () => output(await withSelectedStore((store) => store.add(readValue()))),
+      "put-record": async () => {
+        const value = readValue();
+        const rawKey = document.querySelector("#record-key").value.trim();
+        output(await withSelectedStore((store) =>
+          rawKey ? store.put(value, readKey()) : store.put(value)
+        ));
+      },
+      "get-record": async () => output(await withSelectedStore((store) => store.get(readKey()))),
+      "delete-record": async () => {
+        if (!confirm("指定したキーのレコードを削除しますか？")) return;
+        output(await withSelectedStore((store) => store.delete(readKey())));
+      },
+      "count-records": async () => output(await withSelectedStore((store) => store.count())),
+      "get-all-records": async () => output(await withSelectedStore((store) => store.getAll())),
+      "get-all-keys": async () => output(await withSelectedStore((store) => store.getAllKeys())),
+      "clear-store": async () => {
+        if (!confirm("このストア内の全レコードを削除しますか？")) return;
+        output(await withSelectedStore((store) => store.clear()));
+      }
+    };
+    for (const [id, action] of Object.entries(storeActions)) {
+      document.querySelector("#" + id).addEventListener("click", async () => {
+        try { await action(); }
+        catch (error) { output("エラー: " + error.message); }
+      });
+    }
+
+    const receiverButton = document.querySelector("#notification-receiver");
+    const senderButton = document.querySelector("#notification-sender");
+    const receiverControls = document.querySelector("#notification-receiver-controls");
+    const senderControls = document.querySelector("#notification-sender-controls");
+    const notificationModeStatus = document.querySelector("#notification-mode-status");
+    const notificationLog = document.querySelector("#notification-log");
+    let notificationMode = null;
+    let notificationUnsubscribers = [];
+
+    function logNotification(value) {
+      const time = new Date().toLocaleTimeString();
+      notificationLog.textContent = "[" + time + "] " +
+        (typeof value === "string" ? value : JSON.stringify(value, null, 2)) +
+        "\\n" + notificationLog.textContent;
+      console.log("[LibDB notification]", value);
+    }
+
+    function stopNotificationReceiver() {
+      for (const unsubscribe of notificationUnsubscribers) unsubscribe();
+      notificationUnsubscribers = [];
+    }
+
+    async function setNotificationMode(mode) {
+      stopNotificationReceiver();
+      notificationMode = mode;
+      receiverButton.setAttribute("aria-pressed", String(mode === "receiver"));
+      senderButton.setAttribute("aria-pressed", String(mode === "sender"));
+      receiverControls.hidden = mode !== "receiver";
+      senderControls.hidden = mode !== "sender";
+
+      if (mode === "receiver") {
+        const db = getSelectedConnection();
+        if (!db) {
+          notificationModeStatus.textContent = "受信するDBへ先に接続してください。";
+          notificationMode = null;
+          receiverControls.hidden = true;
+          receiverButton.setAttribute("aria-pressed", "false");
+          return;
+        }
+        try {
+          await db.ready;
+          notificationUnsubscribers.push(
+            db.on("change", (event) => {
+              logNotification({ event: "change", ...event });
+            }),
+            db.on("versionchange", (event) => {
+              logNotification({ event: "versionchange", ...event });
+            })
+          );
+          notificationModeStatus.textContent = "受信中: " + selectedDb.value;
+          logNotification("受信を開始しました: " + selectedDb.value);
+        } catch (error) {
+          notificationModeStatus.textContent = "受信開始失敗: " + error.message;
+        }
+      } else {
+        notificationModeStatus.textContent = mode === "sender"
+          ? "送信モード: " + (selectedDb.value || "DB未選択")
+          : "モードを選択してください。";
+      }
+    }
+
+    receiverButton.addEventListener("click", () => setNotificationMode("receiver"));
+    senderButton.addEventListener("click", () => setNotificationMode("sender"));
+    document.querySelector("#stop-notification-receiver").addEventListener("click", () => {
+      stopNotificationReceiver();
+      notificationMode = null;
+      receiverControls.hidden = true;
+      receiverButton.setAttribute("aria-pressed", "false");
+      notificationModeStatus.textContent = "受信を停止しました。";
+      logNotification("受信を停止しました。");
+    });
+    document.querySelector("#send-notification").addEventListener("click", async () => {
+      try {
+        const db = getSelectedConnection();
+        if (!db) throw new Error("先に選択したDBへ接続してください。");
+        if (!selectedStore.value) throw new Error("ストアを選択してください。");
+        const raw = document.querySelector("#notification-payload").value.trim();
+        if (!raw) throw new Error("送信するJSONデータを入力してください。");
+        const value = JSON.parse(raw);
+        await db.store(selectedStore.value).add(value);
+        logNotification("送信完了: " + selectedDb.value + " / " + selectedStore.value);
+      } catch (error) {
+        logNotification("送信失敗: " + error.message);
+      }
+    });
+
+    await refreshDatabases();
+    await refreshSelection();
+
+    const runButton = document.querySelector("#run");
+    const status = document.querySelector("#status");
+    const log = document.querySelector("#log");
+
+    function write(message) {
+      log.textContent += message + "\n";
+    }
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message);
+      write("✓ " + message);
+    }
+
+    async function runTests() {
+      runButton.disabled = true;
+      log.textContent = "";
+      status.textContent = "テスト実行中...";
+
+      const dbName = "LibDB-Test-" + Date.now();
+      let db;
+
+      try {
+        db = new LibDB(dbName, 1, {
+          records: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [
+              { name: "byName", keyPath: "name" }
+            ]
+          },
+          external: {},
+          logs: {
+            keyPath: "id",
+            autoIncrement: true
+          }
+        });
+        await db.ready;
+
+        assert(true, "データベース接続");
+
+        const autoName = dbName + "-auto";
+        let autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true
+          }
+        });
+        await autoDb.ready;
+        const initialVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        await autoDb.store("items").add({ label: "preserved" });
+        autoDb.close();
+
+        autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [{ name: "byLabel", keyPath: "label" }]
+          },
+          notes: {}
+        });
+        await autoDb.ready;
+        const upgradedVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        assert(initialVersion === 1 && upgradedVersion === 2, '"auto" 新規作成・不足Store/Indexの自動アップグレード');
+        assert((await autoDb.store("items").get(1))?.label === "preserved", '"auto" アップグレード後も既存データを維持');
+        autoDb.close();
+
+        autoDb = new LibDB(autoName, "auto", {
+          items: {
+            keyPath: "id",
+            autoIncrement: true,
+            indexes: [{ name: "byLabel", keyPath: "label" }]
+          },
+          notes: {}
+        });
+        await autoDb.ready;
+        const stableVersion = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(autoName);
+          request.onsuccess = () => { const value = request.result.version; request.result.close(); resolve(value); };
+          request.onerror = () => reject(request.error);
+        });
+        assert(stableVersion === upgradedVersion, '"auto" スキーマ変更なしではバージョンを維持');
+        autoDb.close();
+        await LibDB.delete(autoName);
+
+
+        const records = db.store("records");
+
+        const firstKey = await records.add({
+          name: "Alice",
+          score: 100
+        });
+        await records.add({
+          name: "Bob",
+          score: 80
+        });
+        assert(firstKey === 1, "add() / autoIncrement");
+
+        const one = await records.get(1);
+        assert(one?.name === "Alice", "get()");
+
+        const all = await records.getAll();
+        assert(all.length === 2, "getAll()");
+
+        const keys = await records.getAllKeys();
+        assert(keys.length === 2 && keys.includes(1) && keys.includes(2), "getAllKeys()");
+
+        const total = await records.count();
+        assert(total === 2, "count()");
+
+        const byName = records.index("byName");
+        const alice = await byName.get("Alice");
+        const named = await byName.getAll("Alice");
+        const namedCount = await byName.count("Alice");
+        assert(alice?.name === "Alice" && named.length === 1 && namedCount === 1, "index().get() / getAll() / count()");
+
+        await records.put({
+          id: 1,
+          name: "Alice",
+          score: 120
+        });
+        const updated = await records.get(1);
+        assert(updated.score === 120, "put()");
+
+        await records.bulkAdd([
+          { name: "Carol", score: 70 },
+          { name: "Dave", score: 60 }
+        ]);
+        assert(await records.count() === 4, "bulkAdd()");
+
+        await records.bulkPut([
+          { id: 1, name: "Alice", score: 130 },
+          { id: 2, name: "Bob", score: 90 }
+        ]);
+        assert((await records.get(1)).score === 130, "bulkPut()");
+
+        await records.bulkDelete([3, 4]);
+        assert(await records.count() === 2, "bulkDelete()");
+
+        const external = db.store("external");
+        const externalKey = await external.add({ value: "first" }, "custom-key");
+        await external.put({ value: "updated" }, "custom-key");
+        assert(externalKey === "custom-key" && (await external.get("custom-key")).value === "updated", "add(value, key) / put(value, key)");
+
+        await db.transaction(["records", "logs"], "readwrite", (stores) => {
+          stores.records.put({ id: 10, name: "Transaction", score: 1 });
+          stores.logs.add({ message: "transaction completed" });
+        });
+        assert((await records.get(10))?.name === "Transaction" && await db.store("logs").count() === 1, "db.transaction()");
+
+        await records.delete(2);
+        assert(await records.count() === 2, "delete()");
+
+        await records.clear();
+        assert(await records.count() === 0, "clear()");
+
+        db.close();
+        assert(true, "close()");
+
+        const reconnected = await records.count();
+        assert(reconnected === 0, "close() 後の自動再接続");
+
+        try {
+          await db.store("missing").get(1);
+          throw new Error("存在しないストアのエラーが発生しませんでした");
+        } catch (error) {
+          assert(error instanceof LibDBError, "操作エラーの LibDBError 化");
+        }
+
+        status.textContent = "すべてのテストに成功しました";
+        write("\nテスト完了");
+      } catch (error) {
+        status.textContent = "テスト失敗";
+        write("✗ " + (error?.stack || error));
+        console.error(error);
+      } finally {
+        db?.close();
+        try {
+          await LibDB.delete(dbName);
+          write("LibDB.delete() でテスト用DBを削除しました");
+        } catch (error) {
+          write("DBの後片付けに失敗: " + error.message);
+        }
+        runButton.disabled = false;
+      }
+    }
+
+    runButton.addEventListener("click", runTests);
+    status.textContent = "ライブラリの読み込みに成功しました";
+    write("GitHub Pages から LibDB を読み込みました。");
+  </script>
+</body>
+</html>
