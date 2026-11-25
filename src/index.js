@@ -7,6 +7,17 @@ export class LibDB {
   #database;
   #storeCache = new Map();
 
+  static get emitChange() {
+    return Database.emitChange;
+  }
+
+  static set emitChange(enabled) {
+    if (typeof enabled !== "boolean") {
+      throw new TypeError("LibDB.emitChangeはbooleanで指定してください");
+    }
+    Database.emitChange = enabled;
+  }
+
   static get diff() {
     return Database.diff;
   }
@@ -28,6 +39,22 @@ export class LibDB {
 
   get ready() {
     return this.#database.ready;
+  }
+
+  get emitChange() {
+    return this.#database.emitChange;
+  }
+
+  set emitChange(enabled) {
+    this.#database.emitChange = enabled;
+  }
+
+  get diff() {
+    return this.#database.diff;
+  }
+
+  set diff(enabled) {
+    this.#database.diff = enabled;
   }
 
   store(name) {
