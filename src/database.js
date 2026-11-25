@@ -6,7 +6,41 @@ const CONTEXT_ID = typeof crypto !== "undefined" && typeof crypto.randomUUID ===
 
 export class Database {
   static #connections = new Map();
+  static emitChange = true;
   static diff = true;
+
+  #emitChange;
+  #diff;
+
+  get emitChange() {
+    return this.#emitChange;
+  }
+
+  set emitChange(value) {
+    if (value !== undefined && typeof value !== "boolean") {
+      throw new TypeError("db.emitChangeはbooleanまたはundefinedで指定してください");
+    }
+    this.#emitChange = value;
+  }
+
+  get diff() {
+    return this.#diff;
+  }
+
+  set diff(value) {
+    if (value !== undefined && typeof value !== "boolean") {
+      throw new TypeError("db.diffはbooleanまたはundefinedで指定してください");
+    }
+    this.#diff = value;
+  }
+
+  get #effectiveEmitChange() {
+    return this.#emitChange ?? Database.emitChange;
+  }
+
+  get #effectiveDiff() {
+    return this.#effectiveEmitChange && (this.#diff ?? Database.diff);
+  }
 
   #db = null;
   #name;
@@ -428,7 +462,7 @@ export class Database {
 
     await this.transaction(storeName, mode, (stores) => {
       const store = stores[storeName];
-      const trackDiff = Boolean(Database.diff && diffInfo);
+      const trackDiff = Boolean(this.#effectiveDiff && diffInfo);
       const changes = [];
 
       const getPathValue = (value, path) => {
