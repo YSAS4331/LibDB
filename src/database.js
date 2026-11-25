@@ -240,6 +240,8 @@ export class Database {
   }
 
   #broadcastChange(change) {
+    if (!this.#effectiveEmitChange) return;
+
     const detail = {
       type: "change",
       database: this.#name,
