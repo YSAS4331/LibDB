@@ -271,6 +271,8 @@ Store APIの書き込み操作では、add、put、bulkAdd、bulkPut、delete、
 
 changeイベントの送信は、書き込みを実行したインスタンスのemitChange設定で制御されます。emitChangeをfalseにしても、そのインスタンスは他のインスタンスや別タブからのchangeイベントを通常どおり受信します。受信側はdb.on("change", ...)の購読有無で制御されます。
 
+changeイベントの送信は、書き込みを実行したインスタンスのemitChange設定で制御されます。emitChangeをfalseにしても、そのインスタンスは他のインスタンスや別タブからのchangeイベントを通常どおり受信します。受信側はdb.on("change", ...)の購読有無で制御されます。
+
 ## 変更差分（diff）
 
 diffはデフォルトで有効です。changeイベントのevent.diffには、レコード単位の変更前後データが配列で格納されます。
@@ -302,6 +304,26 @@ diffはデフォルトで有効です。changeイベントのevent.diffには、
 
 更新時は変更されたフィールドだけではなく、レコード全体が含まれます。
 
+### diff・changeの有効／無効を切り替える
+
+LibDB.emitChangeとLibDB.diffは、全インスタンスに対するデフォルト設定です。どちらも初期値はtrueです。インスタンス側ではdb.emitChange / db.diffで個別設定できます。インスタンス側の初期値はundefinedで、クラス設定に従います。
+
+~~~js
+LibDB.emitChange = false; // 全インスタンスの送信を停止
+LibDB.diff = false;       // 全インスタンスのdiff生成を停止
+
+const db = new LibDB("ExampleDB", 1, { users: "id" });
+db.emitChange = true;     // このインスタンスだけ送信を有効化
+db.diff = true;           // このインスタンスだけdiff生成を有効化
+
+db.emitChange = undefined; // 個別設定を解除し、LibDB.emitChangeに従う
+db.diff = undefined;       // 個別設定を解除し、LibDB.diffに従う
+~~~
+
+インスタンス設定はクラス設定より優先されます。クラスプロパティにはbooleanのみ、インスタンスプロパティにはbooleanまたはundefinedを指定できます。それ以外の値ではTypeErrorが発生します。
+
+実効的なemitChangeがfalseの場合、diffも自動的に無効になります。イベントを送信しない書き込みについてdiff用のIndexedDBリクエストは実行されません。emitChangeがtrueでdiffがfalseの場合は、changeイベントは送信されますがevent.diffは含まれません。
+
 ### diffを利用する
 
 ~~~js
@@ -314,16 +336,7 @@ db.on("change", (event) => {
 });
 ~~~
 
-### diffの有効・無効を切り替える
-
-静的プロパティLibDB.diffで切り替えます。接続前・接続後のどちらでも設定でき、LibDB全体に適用されます。
-
-~~~js
-LibDB.diff = false; // diffの生成を無効化
-LibDB.diff = true;  // diffの生成を再び有効化
-~~~
-
-無効化しても変更通知自体は送信されますが、event.diffは含まれません。diffの取得には追加のIndexedDBリクエストが必要です。また、clear()は削除前の全レコードをdiffに含めるため、大量のデータがある場合はdiffを無効にすることをおすすめします。
+diffの取得には追加のIndexedDBリクエストが必要です。また、clear()は削除前の全レコードをdiffに含めるため、大量のデータがある場合はdiffを無効にすることをおすすめします。
 
 diffの対象はStore APIの書き込み操作です。複数Storeのdb.transaction()はネイティブStoreを直接操作するため、現時点ではdiffの対象外です。
 
@@ -388,6 +401,8 @@ try {
 - 別タブへの変更通知にはBroadcastChannelを使用します。BroadcastChannel非対応環境では別タブへの通知は利用できません。
 - db.transaction()のcallback内ではawaitを使用できません。
 - db.transaction()による複数Store操作は変更通知されますが、現時点ではdiffの対象外です。
+- emitChangeは送信元インスタンスの書き込み通知だけを制御します。他インスタンス・別タブからの通知受信には影響しません。
+- 実効的なemitChangeがfalseの場合、diffも自動的に無効化され、diff用の追加IndexedDBリクエストは発生しません。
 - emitChangeは送信元インスタンスの書き込み通知だけを制御します。他インスタンス・別タブからの通知受信には影響しません。
 - 実効的なemitChangeがfalseの場合、diffも自動的に無効化され、diff用の追加IndexedDBリクエストは発生しません。
 - diffの生成には追加のIndexedDBリクエストが発生します。clear()で大量のレコードを削除する場合は、必要に応じてdiffを無効にしてください。
