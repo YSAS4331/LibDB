@@ -269,6 +269,8 @@ Store APIの書き込み操作では、add、put、bulkAdd、bulkPut、delete、
 
 通知はトランザクションが正常に完了した後に送信されます。失敗・中止したトランザクションは通知されません。同一ページ内では、同じDB名で接続しているLibDBインスタンスに通知されます。別タブへの通知では、送信元の実行コンテキスト自身への重複通知は行われません。
 
+changeイベントの送信は、書き込みを実行したインスタンスのemitChange設定で制御されます。emitChangeをfalseにしても、そのインスタンスは他のインスタンスや別タブからのchangeイベントを通常どおり受信します。受信側はdb.on("change", ...)の購読有無で制御されます。
+
 ## 変更差分（diff）
 
 diffはデフォルトで有効です。changeイベントのevent.diffには、レコード単位の変更前後データが配列で格納されます。
@@ -386,6 +388,8 @@ try {
 - 別タブへの変更通知にはBroadcastChannelを使用します。BroadcastChannel非対応環境では別タブへの通知は利用できません。
 - db.transaction()のcallback内ではawaitを使用できません。
 - db.transaction()による複数Store操作は変更通知されますが、現時点ではdiffの対象外です。
+- emitChangeは送信元インスタンスの書き込み通知だけを制御します。他インスタンス・別タブからの通知受信には影響しません。
+- 実効的なemitChangeがfalseの場合、diffも自動的に無効化され、diff用の追加IndexedDBリクエストは発生しません。
 - diffの生成には追加のIndexedDBリクエストが発生します。clear()で大量のレコードを削除する場合は、必要に応じてdiffを無効にしてください。
 
 ## ライセンス
